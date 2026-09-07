@@ -22,4 +22,8 @@ export class ActionTracker {
     this.actions.push(action);
     return action;
   }
+
+  getActions():readonly ActionLog[] {
+    return this.actions;
+  }
 }
