@@ -1,6 +1,7 @@
 import {select,isCancel} from "@clack/prompts";
 import chalk from "chalk";
 import figlet from "figlet";
+import {runcliMode} from "../modes/cli";
 
 
 const BANNER_FONT="ANSI Shadow";
@@ -46,17 +47,20 @@ export async function runwakeup()
         options:[
             {value:"CLI",label:"Command Line Interface (CLI)"},
             {value:"Telegram",label:"Telegram Bot"},
+            {value:"Exit",label:"Exit"}
         ]
     });
 
-    if(isCancel(mode))
+    if(isCancel(mode) || mode==="Exit")
     {
-        process.exit(0);
+      console.log(chalk.dim("Exiting Clawbot AI..."));
+      return;
     }
+   
     
     if(mode==="CLI")
     {
-        console.log(chalk.dim("Starting Clawbot AI in CLI mode..."));
+        await runcliMode()
     }
 
     if(mode==="Telegram")
