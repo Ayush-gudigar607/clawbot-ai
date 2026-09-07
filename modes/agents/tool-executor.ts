@@ -78,5 +78,29 @@ export class ToolExecutor {
         }
 
   }
+
+  //This function is interesting because it understands the staged state.
+  getEffectiveText(rel:string):string | undefined
+  {
+   const key=this.norm(rel);
+   //why this is undefined because the file has been staged for deletion, so it should not be considered as existing anymore.
+   if(this.deleted.has(key))
+   {
+    return undefined;
+   }
+
+   if(this.overlay.has(key))
+   {
+    return this.overlay.get(key);
+   }
+
+   // If the file is not in the overlay, we need to read it from the file system.
+   const abs=this.resolveSafe(rel);
+   if(!fs.existsSync(abs) || !fs.statSync(abs).isFile())
+   {
+    return undefined;
+   }
+   return fs.readFileSync(abs,"utf-8");
+  }
 }
 
