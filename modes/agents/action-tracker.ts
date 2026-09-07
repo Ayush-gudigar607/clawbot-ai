@@ -26,4 +26,10 @@ export class ActionTracker {
   getActions():readonly ActionLog[] {
     return this.actions;
   }
+
+  getPendingMutations(): readonly ActionLog[] {
+    {
+        return this.actions.filter((action)=>isMutationType(action.type) && action.status==='pending');
+    }
+}
 }
