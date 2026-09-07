@@ -54,4 +54,29 @@ export class ToolExecutor {
     }
     return abs;
   }
+
+  //This checks whether a file is prohibited by configuration
+  private excluded(relPath: string): boolean {
+    const norm=this.norm(relPath);
+    const segments = norm.split("/");
+    const base=segments[segments.length - 1] ?? "";
+
+    for(const pat of this.config.excludePatterns)
+    {
+        if (pat === "*.log" && base.endsWith(".log")) return true;
+      if (pat === ".env*" && base.startsWith(".env")) return true;
+      if (pat.includes("*")) continue;
+      if (segments.includes(pat) || norm === pat || norm.startsWith(`${pat}/`))
+        return true;
+    }
+    return false;
+    }
+
+    private assertNotExcluded(relPath: string,op:string): void {
+        if (this.excluded(relPath)) {
+            throw new Error(`Operation ${op} is not allowed on excluded file: ${relPath}`);
+        }
+
+  }
 }
+
