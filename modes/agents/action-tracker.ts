@@ -28,8 +28,21 @@ export class ActionTracker {
   }
 
   getPendingMutations(): readonly ActionLog[] {
-    {
-        return this.actions.filter((action)=>isMutationType(action.type) && action.status==='pending');
+    return this.actions.filter(
+      (action) => isMutationType(action.type) && action.status === "pending",
+    );
+  }
+
+  updateStatus(id: String, status: ActionStats, userApproved?: boolean): void {
+    const action = this.actions.find((action) => action.id === id);
+    if (action) {
+      action.status = status;
+      if (userApproved !== undefined) {
+        action.userApproved = userApproved;
+      }
     }
+  }
 }
-}
+
+
+
