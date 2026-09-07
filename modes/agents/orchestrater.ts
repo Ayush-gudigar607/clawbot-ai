@@ -1,7 +1,8 @@
 import { isCancel, text } from "@clack/prompts";
 import { defaultAgentConfig } from "./types";
+import { ActionTracker } from "./action-tracker";
 import chalk from "chalk";
-    
+
 export async function runAgentMode()
 {
     console.log(chalk.bold("Starting Clawbot AI in Agent mode..."));
@@ -17,5 +18,6 @@ const goal=await text({
     }
 
     const config=defaultAgentConfig();
+    const tracker=new ActionTracker();
     }
 
