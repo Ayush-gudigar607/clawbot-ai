@@ -370,4 +370,17 @@ export class ToolExecutor {
 
     return 'shell queued:${command}';
   }
+
+  skillRoots(): string[] {
+    const extra =
+      process.env.SKILLS_DIRS?.split(/[;]/)
+        .map((s) => s.trim())
+        .filter(Boolean) ?? [];
+    return [
+      ...extra,
+      path.join(homedir(), ".cursor/skills-cursor"),
+      path.join(homedir(), ".claude/skills"),
+    ];
+  }
+  
 }
