@@ -44,7 +44,9 @@ export class ToolExecutor {
   ) {}
 
   private resolveSafe(rel: string): string {
+    //turns a sequence of path segments into a full, absolute file path.
     const abs = path.resolve(this.config.codebasePath, rel);
+    //turns a sequence of path segments into a full, absolute file path.
     const root = path.resolve(this.config.codebasePath);
     //codebasePath =D:\clawbot-->and the agent asks for: src/index.ts-->It resolves:D:\clawbot\src\index.ts
     const relcheck = path.relative(root, abs);
@@ -58,6 +60,7 @@ export class ToolExecutor {
   //This checks whether a file is prohibited by configuration
   private excluded(relPath: string): boolean {
     const norm=this.norm(relPath);
+    //const segments = ["src", "index.ts"];
     const segments = norm.split("/");
     const base=segments[segments.length - 1] ?? "";
 
@@ -73,10 +76,10 @@ export class ToolExecutor {
     }
 
     private assertNotExcluded(relPath: string,op:string): void {
+      //if the endpoint like .log or .env it will return true and error part will be run it
         if (this.excluded(relPath)) {
             throw new Error(`Operation ${op} is not allowed on excluded file: ${relPath}`);
         }
-
   }
 
   //This function is interesting because it understands the staged state.
