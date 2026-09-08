@@ -276,7 +276,71 @@ export class ToolExecutor {
     return out || "(empty";
     }
     
+    searchFiles(rootRel:string,globPattern:string,contentQuery?:string):string
+    {
+      this.assertNotExcluded(rootRel,"search_files");
+      const rootAbs=this.resolveSafe(rootRel);
+      if(!fs.existsSync(rootAbs) || !fs.statSync(rootAbs).isDirectory())
+      {
+        throw new Error(`search_files:folder not found:${rootRel}`);
+      }
+
+      const results:string[]=[];
+      const regexFromGlob=(g:string):RegExp=>
+      {
+        //This function converts a glob pattern into a regular expression.
+        const escaped=g
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*\*/g, "§§")
+        .replace(/\*/g, "[^/\\\\]*")
+        .replace(/§§/g, ".*")
+        .replace(/\?/g, ".");
+      return new RegExp(`^${escaped}$`, "i");
+      }
+      //src\utils\*.ts--->src/utils/*.ts
+      const nameRe=regexFromGlob(globPattern.replace(/\\/g, "/"));
+
+      const walk=(dir:string)=>
+      {
+        //This reads everything inside the directory.
+        for(const ent of fs.readdirSync(dir,{withFileTypes:true}))
+        {
+          const full=path.join(dir,ent.name);
+          const rel=path.relative(this.config.codebasePath,full).split(path.sep).join("/");
+          if(this.excluded(rel)) continue;
+          if(ent.isDirectory()) walk(full);
+          else if(nameRe.test(rel))
+          {
+            if(contentQuery && isProbablyTextFile(full))
+            {
+              const text=this.getEffectiveText(rel);
+              if(text && !text.includes(contentQuery)) continue;
+              const Readtext=fs.readFileSync(full,"utf-8");
+              if(!Readtext.includes(contentQuery)) continue;
+            }
+            results.push(rel);
+          }
+        }
+      }
+ if (fs.statSync(rootAbs).isDirectory()) walk(rootAbs);
+    else {
+      const relP = path
+        .relative(this.config.codebasePath, rootAbs)
+        .split(path.sep)
+        .join("/");
+      results.push(relP);
+    }
+ const out = [...new Set(results)].sort().join("\n");
+    this.tracker.log({
+      type: "code_analysis",
+      path: this.norm(rootRel),
+      details: { after: out || "(no matches)", toolName: "search_files" },
+      status: "executed",
+    });
+    return out || "(no matches)";
   }
+    }
+  
 
 
 
