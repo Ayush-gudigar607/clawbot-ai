@@ -382,5 +382,28 @@ export class ToolExecutor {
       path.join(homedir(), ".claude/skills"),
     ];
   }
+
+  listSkills(): string {
+    const lines: string[] = [];
+    for (const root of this.skillRoots()) {
+      if (!fs.existsSync(root)) continue;
+      const walk = (dir: string) => {
+        for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, ent.name);
+          if (ent.isDirectory()) walk(full);
+          else if (ent.name === "SKILL.md") lines.push(full);
+        }
+      };
+      walk(root);
+    }
+    const out = lines.sort().join("\n");
+    this.tracker.log({
+      type: "code_analysis",
+      path: "skills",
+      details: { after: out || "(none)", toolName: "list_skills" },
+      status: "executed",
+    });
+    return out || "(none)";
+  }
   
 }
