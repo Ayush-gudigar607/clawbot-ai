@@ -184,5 +184,34 @@ export class ToolExecutor {
     });
     return `Staged update: ${key}`
   }
-}
+
+  DefaultGeneratedFile(rel:string):string{
+    if(!this.config.tools.allowFileModification)
+    {
+      throw new Error("File deletion failed")
+    }
+
+    this.assertNotExcluded(rel,"delete_file");
+    const before=this.getEffectiveText(rel);
+
+    if(before===undefined)
+    {
+      throw new Error(`delete_file:file not found:${rel}`);
+    }
+      const key=this.norm(rel);
+      this.overlay.delete(key);
+      this.deleted.add(key);
+
+      this.tracker.log({
+        type:"file_delete",
+        path:key,
+        details:{before},
+        status:"pending"
+      })
+
+      return `Stagged delete: ${key}`
+    }
+  }
+
+
 
