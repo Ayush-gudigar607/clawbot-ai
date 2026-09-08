@@ -229,8 +229,56 @@ export class ToolExecutor {
       return `Stagged new folder ${key}`
     }
 
+    listFiles(rel:string,recursive:boolean):string
+    {
+      this.assertNotExcluded(rel,"list_files");
+      const abs=this.resolveSafe(rel);
+      if(!fs.existsSync(abs)) throw new Error(`list_files:folder not found:${rel}`);
+
+      const lines:string[]=[];
+      //dir-it is mainly used for get the directory
+      //prefix-it is mainly used for get the prefix of the directory like / or //
+      const walk=(dir:string,prefix:string)=>
+      {
+        const entries=fs.readdirSync(dir,{withFileTypes:true});
+        for(const ent of entries)
+        {
+          const full=path.join(dir,ent.name);
+          const relpath=path.relative(this.config.codebasePath,full);
+          //suppose  the folder contains the .env file and the agent tries to list all files in the folder, it will skip that file and continue to the next one.
+          if(this.excluded(relpath)) continue;
+          //wheather it is a directory
+          if(ent.isDirectory())
+          {
+            lines.push(`${prefix}${ent.name}/`);
+            if(recursive)
+            {
+              walk(full,`${prefix}${ent.name}/`);
+            }
+          }
+          else
+          {
+            lines.push(`${prefix}${ent.name}`);
+          }
+        }
+      };
+
+      if (fs.statSync(abs).isDirectory()) walk(abs, "");
+    else lines.push(path.relative(this.config.codebasePath, abs));
+
+    const out=lines.sort().join("\n");
+    this.tracker.log({
+      type:"code_analysis", 
+      path:this.norm(rel),
+      details:{after:out},
+      status:"executed"
+    })
+    return out || "(empty";
+    }
     
   }
+
+
 
 
 
