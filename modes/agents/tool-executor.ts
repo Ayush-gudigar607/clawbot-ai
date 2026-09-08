@@ -99,11 +99,39 @@ export class ToolExecutor {
 
    // If the file is not in the overlay, we need to read it from the file system.
    const abs=this.resolveSafe(rel);
+   //Node.js fs.existsSync() checks if a file or path exists, while fs.statSync() retrieves detailed metadata (like file size or type) and throws an error if the path is missing.
    if(!fs.existsSync(abs) || !fs.statSync(abs).isFile())
    {
     return undefined;
    }
    return fs.readFileSync(abs,"utf-8");
+  }
+
+  readFile(rel:string):string
+  {
+    this.assertNotExcluded(rel,"read_File");
+    const content = this.getEffectiveText(rel);
+    const abs=this.resolveSafe(rel);
+    if(!fs.existsSync(abs) || !fs.statSync(abs).isFile())
+    {
+      throw new Error(`File not found:${rel}`)
+    }
+    //it gives metadata about retrive it (file_size and type)
+   const st=fs.statSync(abs);
+   //if file size is more then reject it and return the error
+   if(st.size > this.config.maxFileSizeToRead)
+   {
+    throw new Error(`File is too large:${rel}`);
+   }
+   //read the file using path
+   const text=fs.readFileSync(abs,"utf-8");
+   this.tracker.log({
+    type:"code_analysis",
+    path:this.norm(rel),
+    details:{after:text,toolName:"read_File"},
+    status:"executed"
+   })
+   return text;
   }
 }
 
