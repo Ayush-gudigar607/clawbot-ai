@@ -185,7 +185,7 @@ export class ToolExecutor {
     return `Staged update: ${key}`
   }
 
-  DefaultGeneratedFile(rel:string):string{
+  deleteFile(rel:string):string{
     if(!this.config.tools.allowFileModification)
     {
       throw new Error("File deletion failed")
@@ -211,6 +211,25 @@ export class ToolExecutor {
 
       return `Stagged delete: ${key}`
     }
+
+    createFolder(rel:string):string{
+      if(!this.config.tools.allowFolderCreation)
+      {
+        throw new Error("Folder creation disabled")
+      }
+
+      this.assertNotExcluded(rel,"create_folder");
+      const key=this.norm(rel);
+      this.tracker.log({
+        type:"folder_create",
+        path:key,
+        details:{after:key},
+        status:"pending"
+      })
+      return `Stagged new folder ${key}`
+    }
+
+    
   }
 
 
