@@ -82,7 +82,7 @@ export class ToolExecutor {
         }
   }
 
-  //This function is interesting because it understands the staged state.
+  //This function is interesting because it understands the staged state.(this will return the )
   getEffectiveText(rel:string):string | undefined
   {
    const key=this.norm(rel);
@@ -132,6 +132,57 @@ export class ToolExecutor {
     status:"executed"
    })
    return text;
+  }
+
+  createFile(rel:string,content:string):string{
+    if(!this.config.tools.allowFileCreation)
+    {
+      throw new Error("File creation disabled")
+    }
+
+    this.assertNotExcluded(rel,"create_File");
+    const key=this.norm(rel);
+    const abs=this.resolveSafe(rel);
+
+    if(fs.existsSync(abs) && !this.deleted.has(key))
+    {
+      throw new Error(`Create_file:already exists:${rel}`)
+    }
+
+    this.deleted.delete(key);
+    this.overlay.set(key,content);
+    this.tracker.log({
+      type:"file_create",
+      path:key,
+      details:{after:content},
+      status:"pending"
+    })
+    return `Stagged new file ${key}`
+  }
+
+  modifyFile(rel:string,content:string):string{
+    if(!this.config.tools.allowFileModification)
+    {
+      throw new Error("File creation disabled")
+    }
+    this.assertNotExcluded(rel,"modify_file");
+    
+    //this will provide the file content
+    const before=this.getEffectiveText(rel);
+    if(before === undefined)
+    {
+      throw new Error(`Modify_file:file not found`);
+    }
+
+    const key=this.norm(rel);
+    this.overlay.set(key,content);
+    this.tracker.log({
+      type:"file_modify",
+      path:key,
+      details:{before,after:content},
+      status:"pending"
+    });
+    return `Staged update: ${key}`
   }
 }
 
