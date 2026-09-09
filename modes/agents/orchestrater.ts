@@ -26,6 +26,7 @@ export async function runAgentMode() {
 
   const agent = new ToolLoopAgent({
     model: getAgentModel(),
+    //stepCountIs is a function that returns a function that checks if the step count is greater than or equal to the given number
     stopWhen: stepCountIs(40),
     instructions: [
       `workspace root:${config.codebasePath}`,
@@ -39,6 +40,7 @@ export async function runAgentMode() {
       prompt: goal.trim(),
       onStepFinish: ({ toolCalls }) => {
         for (const tc of toolCalls) {
+          // Log the tool call to the console with a preview of the input
           const preview = JSON.stringify(tc.input).slice(0, 160);
           console.log(
             chalk.blue("✔"),
