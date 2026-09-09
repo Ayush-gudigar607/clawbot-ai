@@ -4,7 +4,7 @@ import { ActionTracker } from "./action-tracker";
 import { ToolExecutor } from "./tool-executor";
 import { createToolExecutor } from "./agent-tool";
 import { stepCountIs, ToolLoopAgent } from "ai";
-import { getAgentModel } from "../../ai/index";
+import { getAgentModel } from "../../ai";
 import chalk from "chalk";
 
 export async function runAgentMode() {
