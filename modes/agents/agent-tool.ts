@@ -68,6 +68,8 @@ export function createToolExecutor(executor: ToolExecutor) {
           execute:async({root,pattern,content_contains})=>executor.searchFiles(root,pattern,content_contains) 
         })
 
+        
+
 
 
 
