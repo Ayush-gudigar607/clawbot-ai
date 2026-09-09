@@ -1,4 +1,4 @@
-import { isCancel, text } from "@clack/prompts";
+import { confirm, isCancel, text } from "@clack/prompts";
 import { defaultAgentConfig } from "./types";
 import { ActionTracker } from "./action-tracker";
 import { ToolExecutor } from "./tool-executor";
@@ -53,6 +53,43 @@ export async function runAgentMode() {
 
     if (result.text.trim()) {
       console.log(chalk.green("\nAgent:"), result.text);
+    }
+
+    const pending = tracker.getPendingMutations();
+    if (pending.length === 0) {
+      return;
+    }
+
+    console.log(chalk.yellow("\nPending changes:"));
+    for (const action of pending) {
+      console.log(`- ${action.type}: ${action.path}`);
+    }
+
+    const approval = await confirm({
+      message: "Apply these changes to the workspace?",
+      initialValue: false,
+    });
+
+    if (isCancel(approval) || !approval) {
+      for (const action of pending) {
+        tracker.updateStatus(action.id, "rejected", false);
+      }
+      console.log(chalk.yellow("Changes rejected; no files were modified."));
+      return;
+    }
+
+    for (const action of pending) {
+      tracker.updateStatus(action.id, "approved", true);
+    }
+
+    const { errors } = executor.applyApprovedFromTracker();
+    if (errors.length > 0) {
+      console.error(chalk.red("Some approved changes failed:"));
+      for (const error of errors) {
+        console.error(chalk.red(`- ${error}`));
+      }
+    } else {
+      console.log(chalk.green("Changes applied successfully."));
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
