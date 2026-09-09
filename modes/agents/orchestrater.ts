@@ -34,17 +34,26 @@ export async function runAgentMode() {
     tools,
   });
 
-  const result=await agent.generate(
-    {
-        prompt:goal.trim(),
-        onStepFinish:({toolCalls}) => {
-            for (const tc of toolCalls) {
-               const preview=JSON.stringify(tc.input).slice(0, 160);
-               console.log(chalk.blue('✔'),
-                chalk.bold(String(tc.toolName)),
-                chalk.dim(preview + (preview.length>=160?'...':'')));
-            }
+  try {
+    const result = await agent.generate({
+      prompt: goal.trim(),
+      onStepFinish: ({ toolCalls }) => {
+        for (const tc of toolCalls) {
+          const preview = JSON.stringify(tc.input).slice(0, 160);
+          console.log(
+            chalk.blue("✔"),
+            chalk.bold(String(tc.toolName)),
+            chalk.dim(preview + (preview.length >= 160 ? "..." : "")),
+          );
         }
+      },
+    });
+
+    if (result.text.trim()) {
+      console.log(chalk.green("\nAgent:"), result.text);
     }
-  );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(chalk.red("Agent failed:"), message);
+  }
 }
