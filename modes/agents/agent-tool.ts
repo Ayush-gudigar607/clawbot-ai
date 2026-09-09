@@ -23,4 +23,13 @@ export function createToolExecutor(executor: ToolExecutor) {
       execute: async ({ path: p, content }) => executor.createFile(p, content),
     })
   };
+
+  modify_file:tool({
+            description:"Stage modification of a file with the given content",
+            inputSchema:z.object({
+                path:z.string().describe("The relative path to the file to modify"),
+                content:z.string().describe("The content to write to the file")
+            }),
+            execute:async({path:p,content:c})=>executor.modifyFile(p,c)
+        })
 }
