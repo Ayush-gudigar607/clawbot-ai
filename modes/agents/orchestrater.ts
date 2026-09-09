@@ -22,6 +22,6 @@ const goal=await text({
     const config=defaultAgentConfig();
     const tracker=new ActionTracker();
     const executor=new ToolExecutor(tracker,config);
-    const toolExecutor=createToolExecutor(executor);
+    const tools=createToolExecutor(executor);
     }
 
