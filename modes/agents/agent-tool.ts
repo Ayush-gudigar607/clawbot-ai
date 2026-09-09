@@ -21,8 +21,8 @@ export function createToolExecutor(executor: ToolExecutor) {
         content: z.string().describe("Content to write to the file"),
       }),
       execute: async ({ path: p, content }) => executor.createFile(p, content),
-    })
-  };
+    }),
+  
 
   modify_file:tool({
             description:"Stage modification of a file with the given content",
@@ -31,5 +31,26 @@ export function createToolExecutor(executor: ToolExecutor) {
                 content:z.string().describe("The content to write to the file")
             }),
             execute:async({path:p,content:c})=>executor.modifyFile(p,c)
-        })
+        }),
+
+        delete_file:tool({
+            description:"Stage deletion of a file",
+            inputSchema:z.object({
+                path:z.string().describe("The relative path to the file to delete")
+            }),
+            execute:async({path:p})=>executor.deleteFile(p)
+        }),
+
+        create_folder:tool({
+            description:"Stage creation of a folder",
+            inputSchema:z.object({
+              path:z.string().describe("The relative path to the folder to create")
+            }),
+            execute:async({path:p})=>executor.createFolder(p)
+        }),
+
+        
+
+
+}
 }
