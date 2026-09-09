@@ -74,14 +74,15 @@ export function createToolExecutor(executor: ToolExecutor) {
             root:z.string().describe("The root path of the codebase to analyze")
           }),
           execute:async({root})=>executor.analyzeCodebase(root)
-        })
+        }),
 
-
-
-
-
-
-
+        execute_shell:tool({
+          description:"Queue a shell command to run in the workspace after user approval.use with care",
+          inputSchema:z.object({
+            command:z.string().describe("The shell command to execute")
+          }),
+          execute:async({command})=>executor.queueShell(command)
+        }),
 }
 }
 
