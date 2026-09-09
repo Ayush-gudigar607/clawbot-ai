@@ -66,9 +66,16 @@ export function createToolExecutor(executor: ToolExecutor) {
             content_contains:z.string().optional().describe("Optional content query to filter files by content")
           }),
           execute:async({root,pattern,content_contains})=>executor.searchFiles(root,pattern,content_contains) 
+        }),
+
+        analyze_codebase:tool({
+          description:"Summarize structure:file counts,size,extensions,dependencies, etc. of the codebase",
+          inputSchema:z.object({
+            root:z.string().describe("The root path of the codebase to analyze")
+          }),
+          execute:async({root})=>executor.analyzeCodebase(root)
         })
 
-        
 
 
 
@@ -77,3 +84,4 @@ export function createToolExecutor(executor: ToolExecutor) {
 
 }
 }
+
