@@ -49,7 +49,18 @@ export function createToolExecutor(executor: ToolExecutor) {
             execute:async({path:p})=>executor.createFolder(p)
         }),
 
+        list_files:tool({
+            description:"List files and directories under a path",
+            inputSchema:z.object({
+              path:z.string().describe("The relative path to list files and directories under"),
+              recursive:z.boolean().optional().describe("Whether to list files recursively").default(false)
+            }),
+            execute:async({path:p,recursive:r})=>executor.listFiles(p,r)
+        }),
+
         
+
+
 
 
 }
