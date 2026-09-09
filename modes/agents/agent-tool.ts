@@ -83,6 +83,22 @@ export function createToolExecutor(executor: ToolExecutor) {
           }),
           execute:async({command})=>executor.queueShell(command)
         }),
+
+        list_skills:tool({
+          description:"List all skills in the codebase",
+          inputSchema:z.object({
+
+          }),
+          execute:async()=>executor.listSkills()
+        }),
+
+        read_skill:tool({
+          description:"Read the content of a skill file",
+          inputSchema:z.object({
+            path:z.string().describe("The relative path to the skill file to read")
+          }),
+          execute:async({path:p})=>executor.readSkill(p)
+        }),
 }
 }
 
