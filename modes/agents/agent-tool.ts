@@ -58,7 +58,17 @@ export function createToolExecutor(executor: ToolExecutor) {
             execute:async({path:p,recursive:r})=>executor.listFiles(p,r)
         }),
 
-        
+        search_files:tool({
+          description:'Find files matching a glob pattern (e.g "*.ts", "**/*.md")',
+          inputSchema:z.object({
+            root:z.string().describe("The root path to search under"),
+            pattern:z.string().describe("The glob pattern to match"),
+            content_contains:z.string().optional().describe("Optional content query to filter files by content")
+          }),
+          execute:async({root,pattern,content_contains})=>executor.searchFiles(root,pattern,content_contains) 
+        })
+
+
 
 
 
