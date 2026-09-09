@@ -12,5 +12,15 @@ export function createToolExecutor(executor: ToolExecutor) {
       }),
       execute: async ({ path: p }) => executor.readFile(p),
     }),
+
+    write_file:tool({
+      description:
+        "Stage creation of a file by writing its content to the codebase",
+      inputSchema: z.object({
+        path: z.string().describe("Relative path of the file to write"),
+        content: z.string().describe("Content to write to the file"),
+      }),
+      execute: async ({ path: p, content }) => executor.createFile(p, content),
+    })
   };
 }
