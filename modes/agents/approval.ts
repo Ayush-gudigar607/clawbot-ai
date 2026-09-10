@@ -3,6 +3,7 @@ import {select,isCancel} from "@clack/prompts";
 import chalk from "chalk";
 import type {ActionLog} from "./types";
 import { composeBeforeAfter, formatPatch } from "./diff-view";
+import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
 
 
 interface ReviewGroup {
@@ -11,7 +12,7 @@ interface ReviewGroup {
   patch: string | null;
 }
 
-function groupPending(pending: ActionLog[]): ReviewGroup[] {
+function groupPending(pending:  ActionLog[]): ReviewGroup[] {
   const byPath = new Map<string, ActionLog[]>();
   const shells: ActionLog[] = [];
 
@@ -63,6 +64,7 @@ function groupPending(pending: ActionLog[]): ReviewGroup[] {
   return groups;
 }
 
+//@ts-ignore
 export async function runApprovalFlow(tracker: ActionTracker): Promise<boolean> {
   const pending=tracker.getPendingMutations();
   if(pending.length===0){
@@ -99,6 +101,53 @@ if(choice==="all"){
   }
   return true;
 }
+
+for(const group of groupPending(pending)){
+  while(true){
+    const option=await select({
+      message:chalk.bold(group.label),
+      options:[
+        {value:"accept",label:"Accept"},
+        {value:"diff",label:"Show diff",hint:group.patch ? "":"N/A"},
+        {value:"reject",label:"Reject"}
+      ]
+    });
+
+    if(isCancel(option))
+    {
+      for(const action of pending){
+        tracker.updateStatus(action.id,"rejected",false);
+      }
+      return false;
+    }
+
+   if (option === "diff") {
+        if (group.patch) {
+          console.log(
+            "\n" +
+              renderTerminalMarkdown("```diff\n" + g.patch + "\n```\n") +
+              "\n",
+          );
+        }
+
+        continue;
+    }
+
+    for(const id of group.actionIds)
+    {
+      tracker.updateStatus(
+        id,
+        option ==="accept" ? "approved":"rejected",
+        option==="accept"
+      )
+    }
+    break;
+   
+  }
+
+}
+
+return tracker.getActions().some((a)=>a.status=="approved")
 
 
 }
