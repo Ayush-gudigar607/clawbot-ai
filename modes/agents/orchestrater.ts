@@ -6,6 +6,8 @@ import { createToolExecutor } from "./agent-tool";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { getAgentModel } from "../../ai";
 import chalk from "chalk";
+import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
+import { runApprovalFlow } from "./approval";
 
 export async function runAgentMode() {
   console.log(chalk.bold("Starting Clawbot AI in Agent mode..."));
@@ -52,45 +54,66 @@ export async function runAgentMode() {
     });
 
     if (result.text.trim()) {
-      console.log(chalk.green("\nAgent:"), result.text);
+      console.log(renderTerminalMarkdown(result.text))
     }
 
-    const pending = tracker.getPendingMutations();
-    if (pending.length === 0) {
-      return;
+    const ok=await runApprovalFlow(tracker);
+    if(!ok){
+         return executor.clearStaging();
     }
 
-    console.log(chalk.yellow("\nPending changes:"));
-    for (const action of pending) {
-      console.log(`- ${action.type}: ${action.path}`);
+    const {errors}=executor.applyApprovedFromTracker();
+
+    if(errors.length>0){
+     console.log(chalk.red("Some approved changes failed:"));
+     for(const error of errors){
+        console.log(chalk.red(`- ${error}`));
+     }
     }
-
-    const approval = await confirm({
-      message: "Apply these changes to the workspace?",
-      initialValue: false,
-    });
-
-    if (isCancel(approval) || !approval) {
-      for (const action of pending) {
-        tracker.updateStatus(action.id, "rejected", false);
-      }
-      console.log(chalk.yellow("Changes rejected; no files were modified."));
-      return;
-    }
-
-    for (const action of pending) {
-      tracker.updateStatus(action.id, "approved", true);
-    }
-
-    const { errors } = executor.applyApprovedFromTracker();
-    if (errors.length > 0) {
-      console.error(chalk.red("Some approved changes failed:"));
-      for (const error of errors) {
-        console.error(chalk.red(`- ${error}`));
-      }
-    } else {
+    else
+    {
       console.log(chalk.green("Changes applied successfully."));
     }
+    
+    //all staged changes have been applied, so we can clear the memory
+    executor.clearStaging();
+
+    // const pending = tracker.getPendingMutations();
+    // if (pending.length === 0) {
+    //   return;
+    // }
+
+    // console.log(chalk.yellow("\nPending changes:"));
+    // for (const action of pending) {
+    //   console.log(`- ${action.type}: ${action.path}`);
+    // }
+
+    // const approval = await confirm({
+    //   message: "Apply these changes to the workspace?",
+    //   initialValue: false,
+    // });
+
+    // if (isCancel(approval) || !approval) {
+    //   for (const action of pending) {
+    //     tracker.updateStatus(action.id, "rejected", false);
+    //   }
+    //   console.log(chalk.yellow("Changes rejected; no files were modified."));
+    //   return;
+    // }
+
+    // for (const action of pending) {
+    //   tracker.updateStatus(action.id, "approved", true);
+    // }
+
+    // const { errors } = executor.applyApprovedFromTracker();
+    // if (errors.length > 0) {
+    //   console.error(chalk.red("Some approved changes failed:"));
+    //   for (const error of errors) {
+    //     console.error(chalk.red(`- ${error}`));
+    //   }
+    // } else {
+    //   console.log(chalk.green("Changes applied successfully."));
+    // }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(chalk.red("Agent failed:"), message);
