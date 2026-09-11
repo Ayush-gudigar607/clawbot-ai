@@ -1,10 +1,9 @@
-import type { ActionTracker } from "./action-tracker";
-import {select,isCancel} from "@clack/prompts";
+import { select, isCancel } from "@clack/prompts";
 import chalk from "chalk";
-import type {ActionLog} from "./types";
-import { composeBeforeAfter, formatPatch } from "./diff-view";
-import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
-
+import type { ActionTracker } from "./action-tracker.ts";
+import type { ActionLog } from "./types.ts";
+import { composeBeforeAfter, formatPatch } from "./diff-view.ts";
+import { renderTerminalMarkdown } from "../../terminalui/terminal-md.ts";
 
 interface ReviewGroup {
   label: string;
@@ -12,7 +11,7 @@ interface ReviewGroup {
   patch: string | null;
 }
 
-function groupPending(pending:  ActionLog[]): ReviewGroup[] {
+function groupPending(pending: ActionLog[]): ReviewGroup[] {
   const byPath = new Map<string, ActionLog[]>();
   const shells: ActionLog[] = [];
 
@@ -31,7 +30,6 @@ function groupPending(pending:  ActionLog[]): ReviewGroup[] {
   const pathEntries = [...byPath.entries()].sort(([a], [b]) =>
     a.localeCompare(b),
   );
-
   for (const [p, acts] of pathEntries) {
     const sorted = acts.sort(
       (x, y) => x.timestamp.getTime() - y.timestamp.getTime(),
@@ -64,65 +62,55 @@ function groupPending(pending:  ActionLog[]): ReviewGroup[] {
   return groups;
 }
 
-//@ts-ignore
-export async function runApprovalFlow(tracker: ActionTracker): Promise<boolean> {
-  const pending=tracker.getPendingMutations();
-  if(pending.length===0){
-    console.log(chalk.green("No pending changes to review."));
+export async function runApprovalFlow(
+  tracker: ActionTracker,
+): Promise<boolean> {
+  const pending = tracker.getPendingMutations();
+
+  if (pending.length === 0) {
+    console.log(
+      chalk.dim("\nNo staged file, folder, or shell changes to review.\n"),
+    );
+    return false;
+  }
+
+  const choice = await select({
+    message: "Apply staged changes?",
+    options: [
+      { value: "all", label: "Approve and apply all" },
+      { value: "select", label: "Review one by one" },
+      { value: "cancel", label: "Cancel" },
+    ],
+  });
+
+  if (isCancel(choice) || choice === "cancel") {
+    for (const a of pending) tracker.updateStatus(a.id, "rejected", false);
+    return false;
+  }
+
+  if (choice === "all") {
+    for (const a of pending) tracker.updateStatus(a.id, "approved", true);
     return true;
   }
+//@ts-ignore
+  for (const g of groupPending(pending)) {
+    while (true) {
+      const opt = await select({
+        message: chalk.bold(g.label),
+        options: [
+          { value: "accept", label: "Accept" },
+          { value: "diff", label: "Show diff", hint: g.patch ? "" : "N/A" },
+          { value: "reject", label: "Reject" },
+        ],
+      });
 
-  const choice=await select({
-    message:"Apply staged changes?",
-    options:[
-      {
-        value:"all",label:"Approve and apply all"
-      },
-      {
-        value:"select",label:"Review one by one"
-      },
-      {
-        value:"cancel",label:"Cancel"
+      if (isCancel(opt)) {
+        for (const a of pending) tracker.updateStatus(a.id, "rejected", false);
+        return false;
       }
-    ]
-})
 
-
-if(isCancel(choice)||choice==="cancel"){
-  for(const action of pending){
-    tracker.updateStatus(action.id,"rejected",false);
-  }
-  return false;
-}
-
-if(choice==="all"){
-  for(const action of pending){
-    tracker.updateStatus(action.id,"approved",true);
-  }
-  return true;
-}
-
-for(const group of groupPending(pending)){
-  while(true){
-    const option=await select({
-      message:chalk.bold(group.label),
-      options:[
-        {value:"accept",label:"Accept"},
-        {value:"diff",label:"Show diff",hint:group.patch ? "":"N/A"},
-        {value:"reject",label:"Reject"}
-      ]
-    });
-
-    if(isCancel(option))
-    {
-      for(const action of pending){
-        tracker.updateStatus(action.id,"rejected",false);
-      }
-      return false;
-    }
-
-   if (option === "diff") {
-        if (group.patch) {
+      if (opt === "diff") {
+        if (g.patch) {
           console.log(
             "\n" +
               renderTerminalMarkdown("```diff\n" + g.patch + "\n```\n") +
@@ -131,23 +119,18 @@ for(const group of groupPending(pending)){
         }
 
         continue;
-    }
+      }
 
-    for(const id of group.actionIds)
-    {
-      tracker.updateStatus(
-        id,
-        option ==="accept" ? "approved":"rejected",
-        option==="accept"
-      )
+      for (const id of g.actionIds) {
+        tracker.updateStatus(
+          id,
+          opt === "accept" ? "approved" : "rejected",
+          opt === "accept",
+        );
+      }
+      break;
     }
-    break;
-   
   }
 
-}
-
-return tracker.getActions().some((a)=>a.status=="approved")
-
-
+  return tracker.getActions().some((a) => a.status === "approved");
 }
