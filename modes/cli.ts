@@ -20,7 +20,9 @@ export async function runcliMode() {
     }
 
     if(mode=="agent")
+        
     {
+        //this function will run the agent mode, which will allow the user to interact with the AI agent and perform tasks.
         await runAgentMode();
     }
 
