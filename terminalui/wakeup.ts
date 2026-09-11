@@ -20,11 +20,11 @@ function printBannerWithShadow(ascii:string)
         console.log(shadowColor(('  ' + line).padEnd(rowWidth)));
     }
 
-  process.stdout.write(`\x1b[${bannerLines.length}A`);
-  for (const line of bannerLines) {
-    console.log(face(line.padEnd(rowWidth)));
-  }
-  console.log();
+    process.stdout.write(`\x1b[${bannerLines.length}A`);
+    for (const line of bannerLines) {
+        console.log(face(line.padEnd(rowWidth)));
+    }
+    console.log();
 }
 
 export async function runwakeup()
