@@ -1,3 +1,4 @@
+// This file defines the types and interfaces used for agent actions and configurations.
 export type ActionType =
   | 'file_create'
   | 'file_modify'
@@ -6,8 +7,11 @@ export type ActionType =
   | 'code_analysis'
   | 'tool_execute';
 
+
+// This type represents the possible statuses of an action performed by the agent.
 export type ActionStats='pending' | 'executed' | 'rejected' |'approved'
 
+// The ActionLog interface defines the structure of an action log entry, which includes details about the action performed, its status, and any relevant metadata.
 export interface ActionLog{
     id:string,
     timestamp:Date,
@@ -25,6 +29,7 @@ export interface ActionLog{
     userApproved?:boolean
 }
 
+//function to check if the action is a mutation type
 export interface AgentConfig {
   codebasePath: string;
   maxFileSizeToRead: number;
@@ -37,6 +42,7 @@ export interface AgentConfig {
   };
 }
 
+// This function returns the default configuration for an agent, including the codebase path, maximum file size to read, excluded patterns, and tool permissions.
 export const defaultAgentConfig = (): AgentConfig => ({
   //this gives current directory
   codebasePath: process.cwd(),
