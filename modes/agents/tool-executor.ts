@@ -7,22 +7,107 @@ import type { ActionLog, AgentConfig } from "./types";
 
 //Theses are file extensions like ts,js and py
 const TEXT_EXT = new Set([
-  ".ts",
-  ".tsx",
+  // JavaScript / TypeScript
   ".js",
   ".jsx",
   ".mjs",
   ".cjs",
+  ".ts",
+  ".tsx",
+
+  // Python
+  ".py",
+  ".pyw",
+
+  // Java / JVM
+  ".java",
+  ".kt",
+  ".kts",
+  ".scala",
+
+  // C / C++
+  ".c",
+  ".h",
+  ".cc",
+  ".cpp",
+  ".cxx",
+  ".hpp",
+
+  // C#
+  ".cs",
+
+  // Go
+  ".go",
+
+  // Rust
+  ".rs",
+
+  // PHP
+  ".php",
+
+  // Ruby
+  ".rb",
+
+  // Swift / Objective-C
+  ".swift",
+  ".m",
+  ".mm",
+
+  // Web
+  ".html",
+  ".htm",
+  ".css",
+  ".scss",
+  ".sass",
+  ".less",
+  ".vue",
+  ".svelte",
+
+  // Data / Configuration
   ".json",
+  ".jsonc",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".ini",
+  ".cfg",
+  ".conf",
+  ".env",
+
+  // Documentation / Text
   ".md",
   ".mdx",
-  ".css",
-  ".html",
-  ".yml",
-  ".yaml",
-  ".toml",
   ".txt",
-  ".py",
+  ".rst",
+
+  // Shell / Scripts
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".fish",
+  ".bat",
+  ".cmd",
+  ".ps1",
+
+  // SQL
+  ".sql",
+
+  // Docker / Infrastructure
+  ".dockerfile",
+  ".tf",
+  ".tfvars",
+
+  // Other commonly encountered source files
+  ".r",
+  ".dart",
+  ".lua",
+  ".pl",
+  ".ex",
+  ".exs",
+  ".erl",
+  ".fs",
+  ".fsx",
 ]);
 
 function isProbablyTextFile(filePath: string): boolean {
