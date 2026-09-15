@@ -12,6 +12,16 @@ import { renderTerminalMarkdown } from "../../terminalui/terminal-md.ts";
 
 export async function runPlanMode():Promise<void>
 {
-  console.log(chalk.bold("\n Plan Mode\n"))
+  console.log(chalk.bold("\n Plan Mode\n"));
+  
+  const goal=await text({
+    message:"What is your goal?",
+    placeholder:"e.g. I want to add a new feature to my project",
+  });
+
+  if(isCancel(goal) || !goal.trim()) return
+
+  const plan=await generatePlan(goal)
+
 
 }
