@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { ActionTracker } from "./action-tracker";
 import type { ActionLog, AgentConfig } from "./types";
 
+//Theses are file extensions like ts,js and py
 const TEXT_EXT = new Set([
   ".ts",
   ".tsx",
