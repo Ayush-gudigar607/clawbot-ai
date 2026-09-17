@@ -41,6 +41,7 @@ export async function runcliMode() {
         await runAskMode();
     }
     
+    //if not agent and mode is not plan as well as ask then return the method is not implemented 
     if(mode!=='agent' && mode!=='plan' && mode!=='ask')
         {
             console.log(chalk.yellow("\n That mode is not implemented yet.\n"));
