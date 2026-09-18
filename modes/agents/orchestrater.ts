@@ -2,7 +2,7 @@ import {isCancel, text } from "@clack/prompts";
 import { defaultAgentConfig } from "./types";
 import { ActionTracker } from "./action-tracker";
 import { ToolExecutor } from "./tool-executor";
-import { createToolExecutor } from "./agent-tool";
+import { createAgentTools } from "./agent-tool";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { getAgentModel } from "../../ai";
 import chalk from "chalk";
@@ -24,7 +24,7 @@ export async function runAgentMode() {
   const config = defaultAgentConfig();
   const tracker = new ActionTracker();
   const executor = new ToolExecutor(tracker, config);
-  const tools = createToolExecutor(executor);
+  const tools = createAgentTools(executor);
 
   const agent = new ToolLoopAgent({
     model: getAgentModel(),

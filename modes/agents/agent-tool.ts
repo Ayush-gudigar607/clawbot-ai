@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ToolExecutor } from "./tool-executor";
 import { tool } from "ai";
 
-export function createToolExecutor(executor: ToolExecutor) {
+export function createAgentTools(executor: ToolExecutor) {
   return {
     read_file: tool({
       description:

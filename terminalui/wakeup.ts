@@ -2,6 +2,7 @@ import {select,isCancel} from "@clack/prompts";
 import chalk from "chalk";
 import figlet from "figlet";
 import {runcliMode} from "../modes/cli";
+import { runTelegramBot } from "../telegram";
 
 
 const BANNER_FONT="ANSI Shadow";
@@ -65,7 +66,7 @@ export async function runwakeup()
 
     if(mode==="Telegram")
     {
-        console.log(chalk.dim("Starting Clawbot AI in Telegram mode..."));
+        await runTelegramBot()
     }
 }
 
