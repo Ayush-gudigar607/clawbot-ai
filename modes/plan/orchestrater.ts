@@ -11,6 +11,7 @@ import { renderTerminalMarkdown } from "../../terminalui/terminal-md.ts";
 import { generatePlan } from "./planner.ts";
 import { printPlan,selectSteps } from "./selection.ts";
 import type { Plan, PlanStep } from "./types.ts";
+import { createWebTools } from "./web-tools.ts";
 
 
 function stepPrompt(goal: string, step: PlanStep): string {
@@ -45,7 +46,8 @@ export async function runPlanMode():Promise<void>
   const executor=new ToolExecutor(tracker,config);
 
   const tools={
-    ...createToolExecutor(executor)
+    ...createToolExecutor(executor),
+    ...createWebTools(tracker),
   };
 
   for(const step of selected)
