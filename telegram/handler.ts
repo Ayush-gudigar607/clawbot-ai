@@ -1,7 +1,7 @@
 import type { Telegraf } from "telegraf";
 import { isOwner } from "./auth";
 import { WELCOME } from "./constant";
-import { clip, commandArg } from "./text";
+import { clip, commandArg, reportAgentError } from "./text";
 import { runAgent, runAsk, runPlanSteps } from "./agent-run";
 import { generatePlan } from "../modes/plan/planner";
 import { planMessage,planKeyboard, planSessions, type PlanSession, refreshPlanUi } from "./plan-session";
@@ -44,7 +44,7 @@ export function registerHandlers(bot: Telegraf) {
       });
 
     await ctx.reply("🔍 Researching your question…");
-    void runAsk(ctx, q).catch(console.error);
+    void runAsk(ctx, q).catch((error) => reportAgentError(ctx, error, '/ask'));
   });
 
    bot.command("agent", async (ctx) => {
@@ -55,7 +55,7 @@ export function registerHandlers(bot: Telegraf) {
         parse_mode: "Markdown",
       });
     await ctx.reply("🤖 Agent is working on your task…");
-    void runAgent(ctx, ctx.chat.id, goal).catch(console.error);
+    void runAgent(ctx, ctx.chat.id, goal).catch((error) => reportAgentError(ctx, error, '/agent'));
   });
 
   bot.command("plan", async (ctx) => {
@@ -74,7 +74,7 @@ export function registerHandlers(bot: Telegraf) {
         const session:PlanSession = {plan , selected:new Set(plan.steps.map((s)=>s.id))}
         await ctx.reply(planMessage(session) , {parse_mode:"Markdown", ...planKeyboard(session)});
          planSessions.set(ctx.chat.id, session);
-    })().catch(console.error)
+    })().catch((error) => reportAgentError(ctx, error, '/plan'))
   });
 
    bot.action(/^plan_toggle:(.+)$/, async (ctx) => {
@@ -125,7 +125,7 @@ export function registerHandlers(bot: Telegraf) {
     const list = steps.map((step, i) => `${i + 1}. ${step.title}`).join('\n');
     await ctx.editMessageText(`🚀 Executing ${steps.length} step(s)…\n\n${list}`);
 
-    void runPlanSteps(ctx, ctx.chat!.id, plan, steps).catch(console.error);
+    void runPlanSteps(ctx, ctx.chat!.id, plan, steps).catch((error) => reportAgentError(ctx, error, 'plan execution'));
   });
 
   bot.action('approval_diff', async (ctx) => {
