@@ -13,6 +13,7 @@ import { ActionTracker } from "../agents/action-tracker.ts";
 import { ToolExecutor } from "../agents/tool-executor.ts";
 import {defaultAgentConfig} from "../agents/types.ts";
 import type {Plan,PlanStep} from "./types.ts";
+import { createWebTools } from "./web-tools.ts";
 
   const planSchema = z.object({
   researchSummary: z.string().optional(),
@@ -123,7 +124,8 @@ export async function generatePlan(goal:string)
 
   //todo:add web search-tools
   const tools={
-    ...readOnlyTools(executor)
+    ...readOnlyTools(executor),
+    ...(hashweb ? createWebTools(tracker) : {})
   };
 
   console.log(chalk.cyan("\n Researching and drafting a plan... \n"))
