@@ -4,6 +4,7 @@ import { runAgentMode } from "./agents/orchestrater";
 import { runAskMode } from "./ask/orchestrater";
 import { runPlanMode } from "./plan/orchestrater";
 
+//function to run the cli
 export async function runcliMode() {
   while (true) {
     const mode = await select({
@@ -24,20 +25,23 @@ export async function runcliMode() {
     if(mode=="agent")
         
     {
-        //this function will run the agent mode, which will allow the user to interact with the AI agent and perform tasks.
+        //call the agent mode 
         await runAgentMode();
     }
 
     if(mode=="plan")
     {
+        //call the plan mode
         await runPlanMode();
     }
 
     if(mode=="ask")
     {
+        //call the ask mode
         await runAskMode();
     }
     
+    //if not agent and mode is not plan as well as ask then return the method is not implemented 
     if(mode!=='agent' && mode!=='plan' && mode!=='ask')
         {
             console.log(chalk.yellow("\n That mode is not implemented yet.\n"));

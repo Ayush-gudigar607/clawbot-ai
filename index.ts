@@ -10,4 +10,5 @@ program.command("wakeup").description("Wake up the Clawbot AI").action(async ()=
    await runwakeup();
 });
 
+//parde the argument to the program 
 program.parseAsync(process.argv);

@@ -10,6 +10,7 @@ export function getAgentModel()
 //get the default model using openrouter
     const modelId=process.env.OPENROUTER_DEFAULT_MODEL;
 
+//if not model id then execute this
     if(!modelId)
     {
         throw new Error("OPENROUTER_DEFAULT_MODEL is not set")
