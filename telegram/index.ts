@@ -18,6 +18,9 @@ export async function runTelegramBot() {
 
    const bot = new Telegraf(token!);
    registerHandlers(bot)
+   bot.catch((err, ctx) => {
+      console.error(`Telegram update ${ctx.update.update_id} failed:`, err);
+   });
 
    await bot.telegram.sendMessage(ownerId!, WELCOME, {parse_mode: "Markdown"});
 

@@ -7,6 +7,23 @@ import { generatePlan } from "../modes/plan/planner";
 import { planMessage,planKeyboard, planSessions, type PlanSession, refreshPlanUi } from "./plan-session";
 import { approvalDiff, approvalSessions } from "./approval-session";
 
+async function answerCallback(
+  ctx: { answerCbQuery: (text?: string) => Promise<unknown> },
+  text?: string,
+) {
+  try {
+    await ctx.answerCbQuery(text);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      /query is too old|response timeout expired|query id is invalid/i.test(error.message)
+    ) {
+      return;
+    }
+    throw error;
+  }
+}
+
 export function registerHandlers(bot: Telegraf) {
          bot.command("start",async(ctx)=>
         {
@@ -61,67 +78,71 @@ export function registerHandlers(bot: Telegraf) {
   });
 
    bot.action(/^plan_toggle:(.+)$/, async (ctx) => {
-    if (!isOwner(ctx.chat!.id)) return ctx.answerCbQuery();
+    if (!isOwner(ctx.chat!.id)) return answerCallback(ctx);
     const s = planSessions.get(ctx.chat!.id);
-    if (!s) return ctx.answerCbQuery();
+    if (!s) return answerCallback(ctx);
+
+    await answerCallback(ctx);
 
     const id = ctx.match[1]!;
     if (s.selected.has(id)) s.selected.delete(id);
     else s.selected.add(id);
 
     await refreshPlanUi(ctx, s);
-    await ctx.answerCbQuery();
   });
 
   bot.action('plan_all', async (ctx) => {
-    if (!isOwner(ctx.chat!.id)) return ctx.answerCbQuery();
+    if (!isOwner(ctx.chat!.id)) return answerCallback(ctx);
     const s = planSessions.get(ctx.chat!.id);
-    if (!s) return ctx.answerCbQuery();
+    if (!s) return answerCallback(ctx);
+    await answerCallback(ctx);
     for (const step of s.plan.steps) s.selected.add(step.id);
     await refreshPlanUi(ctx, s);
-    await ctx.answerCbQuery();
   });
 
   bot.action('plan_none', async (ctx) => {
-    if (!isOwner(ctx.chat!.id)) return ctx.answerCbQuery();
+    if (!isOwner(ctx.chat!.id)) return answerCallback(ctx);
     const s = planSessions.get(ctx.chat!.id);
-    if (!s) return ctx.answerCbQuery();
+    if (!s) return answerCallback(ctx);
+    await answerCallback(ctx);
     s.selected.clear();
     await refreshPlanUi(ctx, s);
-    await ctx.answerCbQuery();
   });
 
 
   bot.action('plan_proceed', async (ctx) => {
-    if (!isOwner(ctx.chat!.id)) return ctx.answerCbQuery();
+    if (!isOwner(ctx.chat!.id)) return answerCallback(ctx);
     const s = planSessions.get(ctx.chat!.id);
-    if (!s) return ctx.answerCbQuery();
+    if (!s) return answerCallback(ctx);
 
     const steps = s.plan.steps.filter((step) => s.selected.has(step.id));
-    if (steps.length === 0) return ctx.answerCbQuery();
+    if (steps.length === 0) return answerCallback(ctx);
+
+    await answerCallback(ctx);
 
     const { plan } = s;
     planSessions.delete(ctx.chat!.id);
     const list = steps.map((step, i) => `${i + 1}. ${step.title}`).join('\n');
     await ctx.editMessageText(`🚀 Executing ${steps.length} step(s)…\n\n${list}`);
-    await ctx.answerCbQuery();
 
     void runPlanSteps(ctx, ctx.chat!.id, plan, steps).catch(console.error);
   });
 
   bot.action('approval_diff', async (ctx) => {
-    if (!isOwner(ctx.chat!.id)) return ctx.answerCbQuery();
+    if (!isOwner(ctx.chat!.id)) return answerCallback(ctx);
     const s = approvalSessions.get(ctx.chat!.id);
-    if (!s) return ctx.answerCbQuery();
-    await ctx.answerCbQuery();
+    if (!s) return answerCallback(ctx);
+    await answerCallback(ctx);
     await ctx.reply(clip(approvalDiff(s.pending)));
   });
 
 
    bot.action('approval_accept', async (ctx) => {
-    if (!isOwner(ctx.chat!.id)) return ctx.answerCbQuery();
+    if (!isOwner(ctx.chat!.id)) return answerCallback(ctx);
     const s = approvalSessions.get(ctx.chat!.id);
-    if (!s) return ctx.answerCbQuery();
+    if (!s) return answerCallback(ctx);
+
+    await answerCallback(ctx, 'Applying...');
 
     approvalSessions.delete(ctx.chat!.id);
     for (const a of s.pending) s.tracker.updateStatus(a.id, 'approved', true);
@@ -129,21 +150,21 @@ export function registerHandlers(bot: Telegraf) {
     s.executor.clearStaging();
 
     await ctx.editMessageText('✅ All changes applied.');
-    await ctx.answerCbQuery('Applied!');
     if (errors.length) console.error(errors);
   });
 
   bot.action('approval_reject', async (ctx) => {
-    if (!isOwner(ctx.chat!.id)) return ctx.answerCbQuery();
+    if (!isOwner(ctx.chat!.id)) return answerCallback(ctx);
     const s = approvalSessions.get(ctx.chat!.id);
-    if (!s) return ctx.answerCbQuery();
+    if (!s) return answerCallback(ctx);
+
+    await answerCallback(ctx, 'Rejecting...');
 
     approvalSessions.delete(ctx.chat!.id);
     for (const a of s.pending) s.tracker.updateStatus(a.id, 'rejected', false);
     s.executor.clearStaging();
 
     await ctx.editMessageText('❌ All changes rejected. Nothing was applied.');
-    await ctx.answerCbQuery('Rejected');
   });
 
 }
