@@ -120,5 +120,6 @@ export async function runPlanSteps(
     if (text?.trim()) await replyMd(ctx, text.trim());
   }
 
+//THIS WILL CALL THE FINISH-RUN FUNCTION
  await finishOrApprove(ctx, chatId, tracker, executor, ' All steps done. No file changes needed.');
 }
