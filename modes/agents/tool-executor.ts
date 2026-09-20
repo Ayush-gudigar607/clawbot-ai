@@ -468,6 +468,7 @@ export class ToolExecutor {
         .map((s) => s.trim())
         .filter(Boolean) ?? [];
     return [
+      path.join(this.config.codebasePath, "skills"),
       ...extra,
       path.join(homedir(), ".cursor/skills-cursor"),
       path.join(homedir(), ".claude/skills"),

@@ -101,6 +101,7 @@ const PLAN_INSTRUCTIONS=(codebase:boolean,hasWeb:boolean)=>
     'You are a Plan-Mode planner.You DO NOT modify files.',
      `Workspace:${codebase}`,
      'use read-only tool for codebase/skills research.',
+     'Call list_skills and read the skill most relevant to the user goal before drafting the plan. Use workspace-task when no specialized skill applies.',
      hasWeb ? 'web tools are available (web_search/web_crawl/fetch_url).use only when needed.':
      'web tools are not available.',
      'output must match the provided JSON schema.',

@@ -33,6 +33,7 @@ export async function runAgentMode() {
     instructions: [
       `workspace root:${config.codebasePath}`,
       `All mutations are stagged until approval`,
+      `Before working, call list_skills and read the SKILL.md that best matches the request. Use skills/workspace-task/SKILL.md when no specialized skill applies.`,
     ].join("\n"),
     tools,
   });
