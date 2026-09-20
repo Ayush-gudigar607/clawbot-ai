@@ -1,670 +1,1566 @@
 import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import { spawnSync } from "node:child_process";
+
 import { ActionTracker } from "./action-tracker";
 import type { ActionLog, AgentConfig } from "./types";
 
-//Theses are file extensions like ts,js and py
-const TEXT_EXT = new Set([
-  // JavaScript / TypeScript
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-  ".ts",
-  ".tsx",
+import {
+  checkCommandPolicy,
+} from "../../security/command-policy";
 
-  // Python
-  ".py",
-  ".pyw",
+import {
+  executeSandboxed,
+} from "../../security/sandbox";
+import { randomUUID } from "node:crypto";
 
-  // Java / JVM
-  ".java",
-  ".kt",
-  ".kts",
-  ".scala",
+export interface ToolResult {
+  success: boolean;
+  message: string;
+  data?: unknown;
+}
 
-  // C / C++
-  ".c",
-  ".h",
-  ".cc",
-  ".cpp",
-  ".cxx",
-  ".hpp",
+interface SearchOptions {
+  maxResults?: number;
+  includeExtensions?: string[];
+}
 
-  // C#
-  ".cs",
-
-  // Go
-  ".go",
-
-  // Rust
-  ".rs",
-
-  // PHP
-  ".php",
-
-  // Ruby
-  ".rb",
-
-  // Swift / Objective-C
-  ".swift",
-  ".m",
-  ".mm",
-
-  // Web
-  ".html",
-  ".htm",
-  ".css",
-  ".scss",
-  ".sass",
-  ".less",
-  ".vue",
-  ".svelte",
-
-  // Data / Configuration
-  ".json",
-  ".jsonc",
-  ".xml",
-  ".yaml",
-  ".yml",
-  ".toml",
-  ".ini",
-  ".cfg",
-  ".conf",
-  ".env",
-
-  // Documentation / Text
-  ".md",
-  ".mdx",
-  ".txt",
-  ".rst",
-
-  // Shell / Scripts
-  ".sh",
-  ".bash",
-  ".zsh",
-  ".fish",
-  ".bat",
-  ".cmd",
-  ".ps1",
-
-  // SQL
-  ".sql",
-
-  // Docker / Infrastructure
-  ".dockerfile",
-  ".tf",
-  ".tfvars",
-
-  // Other commonly encountered source files
-  ".r",
-  ".dart",
-  ".lua",
-  ".pl",
-  ".ex",
-  ".exs",
-  ".erl",
-  ".fs",
-  ".fsx",
-]);
-
-function isProbablyTextFile(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase();
-  return TEXT_EXT.has(ext) || ext === "";
+interface SkillInfo {
+  name: string;
+  path: string;
 }
 
 export class ToolExecutor {
-  //Instead of immediately changing the actual file, the new content goes into:
-  private overlay = new Map<string, string>();
-  //Keeps track of files that have been staged for deletion.
-  private deleted = new Set<string>();
-  //./src/index.ts-->./src/index.ts-->src/index.ts(This is useful because Windows and Linux use different path separators. )
-  private readonly norm = (rel: string) =>
-    path.posix.normalize(rel.split(path.sep).join("/")).replace(/^\.\//, "");
+  /**
+   * Files created/modified by the agent but not yet committed.
+   */
+  private readonly overlay = new Map<string, string>();
+
+  /**
+   * Files deleted by the agent but not yet committed.
+   */
+  private readonly deleted = new Set<string>();
+
+  /**
+   * Normalize workspace-relative paths.
+   */
+  private readonly norm = (rel: string): string =>
+    path.posix
+      .normalize(rel.split(path.sep).join("/"))
+      .replace(/^\.\/+/, "");
 
   constructor(
     private readonly tracker: ActionTracker,
     private readonly config: AgentConfig,
   ) {}
 
+  // ============================================================
+  // PATH SECURITY
+  // ============================================================
+
+  /**
+   * Lexically validate a path against the workspace root.
+   *
+   * This protects against:
+   *
+   * ../
+   * absolute paths
+   * path traversal
+   */
   private resolveSafe(rel: string): string {
-    //turns a sequence of path segments into a full, absolute file path.
-    const abs = path.resolve(this.config.codebasePath, rel);
-    //turns a sequence of path segments into a full, absolute file path.
-    const root = path.resolve(this.config.codebasePath);
-    //codebasePath =D:\clawbot-->and the agent asks for: src/index.ts-->It resolves:D:\clawbot\src\index.ts
-    const relcheck = path.relative(root, abs);
-    //But imagine the agent tries:../../secret.txt--->That could potentially escape the workspace:D:\clawbot
-    if (relcheck.startsWith("..") || path.isAbsolute(relcheck)) {
-      throw new Error(`Path escapes workspace: ${rel}`);
+    if (!rel || typeof rel !== "string") {
+      throw new Error("Path is required");
     }
+
+    const root = path.resolve(this.config.codebasePath);
+    const abs = path.resolve(root, rel);
+
+    const relative = path.relative(root, abs);
+
+    if (
+      relative.startsWith("..") ||
+      path.isAbsolute(relative)
+    ) {
+      throw new Error(
+        `Path escapes workspace: ${rel}`,
+      );
+    }
+
     return abs;
   }
 
-  //This checks whether a file is prohibited by configuration
-  private excluded(relPath: string): boolean {
-    const norm = this.norm(relPath);
-    //const segments = ["src", "index.ts"];
-    const segments = norm.split("/");
-    const base = segments[segments.length - 1] ?? "";
+  /**
+   * Resolve the real filesystem path and ensure that symlinks
+   * cannot escape the workspace.
+   *
+   * For files/directories that don't exist yet, the nearest
+   * existing parent is resolved.
+   */
+  private async resolveRealSafe(rel: string): Promise<string> {
+    const requested = this.resolveSafe(rel);
 
-    for (const pat of this.config.excludePatterns) {
-      if (pat === "*.log" && base.endsWith(".log")) return true;
-      if (pat === ".env*" && base.startsWith(".env")) return true;
-      if (pat.includes("*")) continue;
-      if (segments.includes(pat) || norm === pat || norm.startsWith(`${pat}/`))
-        return true;
+    const workspaceRoot = path.resolve(
+      this.config.codebasePath,
+    );
+
+    const realRoot = await fs.promises.realpath(
+      workspaceRoot,
+    );
+
+    let current = requested;
+    const missingParts: string[] = [];
+
+    while (true) {
+      try {
+        const realCurrent =
+          await fs.promises.realpath(current);
+
+        const relative = path.relative(
+          realRoot,
+          realCurrent,
+        );
+
+        if (
+          relative.startsWith("..") ||
+          path.isAbsolute(relative)
+        ) {
+          throw new Error(
+            `Symlink/path escapes workspace: ${rel}`,
+          );
+        }
+
+        let result = realCurrent;
+
+        for (let i = missingParts.length - 1; i >= 0; i--) {
+          result = path.join(
+            result,
+            missingParts[i]!,
+          );
+        }
+
+        const finalRelative = path.relative(
+          realRoot,
+          result,
+        );
+
+        if (
+          finalRelative.startsWith("..") ||
+          path.isAbsolute(finalRelative)
+        ) {
+          throw new Error(
+            `Path escapes workspace: ${rel}`,
+          );
+        }
+
+        return result;
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes("escapes workspace")
+        ) {
+          throw error;
+        }
+
+        const parent = path.dirname(current);
+
+        if (parent === current) {
+          throw new Error(
+            `Unable to resolve path safely: ${rel}`,
+          );
+        }
+
+        missingParts.push(path.basename(current));
+        current = parent;
+      }
     }
+  }
+
+  /**
+   * Convert an absolute path into a normalized workspace-relative
+   * path.
+   */
+  private relativeToWorkspace(abs: string): string {
+    const root = path.resolve(
+      this.config.codebasePath,
+    );
+
+    const relative = path.relative(root, abs);
+
+    if (
+      relative.startsWith("..") ||
+      path.isAbsolute(relative)
+    ) {
+      throw new Error(
+        `Path is outside workspace: ${abs}`,
+      );
+    }
+
+    return this.norm(relative);
+  }
+
+  // ============================================================
+  // PROTECTED PATHS
+  // ============================================================
+
+  private isProtectedPath(rel: string): boolean {
+    const normalized = this.norm(rel);
+
+    const segments = normalized
+      .split("/")
+      .filter(Boolean);
+
+    if (segments.length === 0) {
+      return false;
+    }
+
+    const basename = segments.at(-1) ?? "";
+
+    const protectedDirectories = new Set([
+      ".git",
+      ".ssh",
+      ".aws",
+      ".gnupg",
+      ".config",
+      "node_modules",
+    ]);
+
+    for (const segment of segments) {
+      if (protectedDirectories.has(segment)) {
+        return true;
+      }
+    }
+
+    /**
+     * Protect environment and credential files.
+     */
+    if (
+      basename === ".env" ||
+      basename.startsWith(".env.")
+    ) {
+      return true;
+    }
+
+    const protectedFiles = new Set([
+      ".npmrc",
+      ".pypirc",
+      ".netrc",
+      "id_rsa",
+      "id_ed25519",
+      "credentials",
+      "credentials.json",
+    ]);
+
+    if (protectedFiles.has(basename)) {
+      return true;
+    }
+
     return false;
   }
 
-  private assertNotExcluded(relPath: string, op: string): void {
-    //if the endpoint like .log or .env it will return true and error part will be run it
-    if (this.excluded(relPath)) {
+  private assertNotProtected(rel: string): void {
+    if (this.isProtectedPath(rel)) {
       throw new Error(
-        `Operation ${op} is not allowed on excluded file: ${relPath}`,
+        `Protected path cannot be modified: ${rel}`,
       );
     }
   }
 
-  //This function is interesting because it understands the staged state.(this will return the )
-  getEffectiveText(rel: string): string | undefined {
-    const key = this.norm(rel);
-    //why this is undefined because the file has been staged for deletion, so it should not be considered as existing anymore.
-    if (this.deleted.has(key)) {
-      return undefined;
+  // ============================================================
+  // EXCLUDE POLICY
+  // ============================================================
+
+  private excluded(rel: string): boolean {
+    const normalized = this.norm(rel);
+
+    if (this.isProtectedPath(normalized)) {
+      return true;
     }
 
-    if (this.overlay.has(key)) {
-      return this.overlay.get(key);
+    const patterns =
+      this.config.excludePatterns ?? [];
+
+    for (const pattern of patterns) {
+      if (this.matchesPattern(normalized, pattern)) {
+        return true;
+      }
     }
 
-    // If the file is not in the overlay, we need to read it from the file system.
-    const abs = this.resolveSafe(rel);
-    //Node.js fs.existsSync() checks if a file or path exists, while fs.statSync() retrieves detailed metadata (like file size or type) and throws an error if the path is missing.
-    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
-      return undefined;
-    }
-    return fs.readFileSync(abs, "utf-8");
+    return false;
   }
 
-  readFile(rel: string): string {
-    this.assertNotExcluded(rel, "read_File");
-    const abs = this.resolveSafe(rel);
-    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
-      throw new Error(`File not found:${rel}`);
+  private assertNotExcluded(rel: string): void {
+    if (this.excluded(rel)) {
+      throw new Error(
+        `Path is excluded: ${rel}`,
+      );
     }
-    //it gives metadata about retrive it (file_size and type)
-    const st = fs.statSync(abs);
-    console.log(st)
-    //if file size is more then reject it and return the error
-    if (st.size > this.config.maxFileSizeToRead) {
-      throw new Error(`File is too large:${rel}`);
-    }
-    //read the file using path
-    const content = this.getEffectiveText(rel);
-    if (content === undefined) {
-      throw new Error(`File not found:${rel}`);
-    }
-    //log the file content
-    this.tracker.log({
-      type: "code_analysis",
-      path: this.norm(rel),
-      details: { after: content, toolName: "read_File" },
-      status: "executed",
-    });
-    return content;
   }
 
-  createFile(rel: string, content: string): string {
+  private matchesPattern(
+    value: string,
+    pattern: string,
+  ): boolean {
+    const normalizedPattern =
+      pattern.replace(/\\/g, "/");
+
+    if (
+      normalizedPattern === value
+    ) {
+      return true;
+    }
+
+    if (
+      normalizedPattern.endsWith("/**")
+    ) {
+      const prefix =
+        normalizedPattern.slice(0, -3);
+
+      return (
+        value === prefix ||
+        value.startsWith(`${prefix}/`)
+      );
+    }
+
+    if (
+      normalizedPattern.startsWith("*.")
+    ) {
+      return value.endsWith(
+        normalizedPattern.slice(1),
+      );
+    }
+
+    if (
+      normalizedPattern.startsWith("*")
+    ) {
+      return value.endsWith(
+        normalizedPattern.slice(1),
+      );
+    }
+
+    return false;
+  }
+
+  private globToRegExp(pattern: string): RegExp {
+    const escaped = pattern
+      .replace(/\\/g, "/")
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*/g, "§§")
+      .replace(/\*/g, "[^/]*")
+      .replace(/§§/g, ".*")
+      .replace(/\?/g, ".");
+
+    return new RegExp(`^${escaped}$`, "i");
+  }
+
+  // ============================================================
+  // FILE HELPERS
+  // ============================================================
+
+  private async assertFile(
+    abs: string,
+  ): Promise<void> {
+    const stat = await fs.promises.stat(abs);
+
+    if (!stat.isFile()) {
+      throw new Error(
+        `Not a file: ${abs}`,
+      );
+    }
+  }
+
+  private async assertDirectory(
+    abs: string,
+  ): Promise<void> {
+    const stat = await fs.promises.stat(abs);
+
+    if (!stat.isDirectory()) {
+      throw new Error(
+        `Not a directory: ${abs}`,
+      );
+    }
+  }
+
+  private async pathExists(
+    abs: string,
+  ): Promise<boolean> {
+    try {
+      await fs.promises.access(abs);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ============================================================
+  // EFFECTIVE CONTENT
+  // ============================================================
+
+  /**
+   * Returns the content that the agent currently sees.
+   *
+   * This includes staged modifications.
+   */
+  private async getEffectiveText(
+    rel: string,
+  ): Promise<string | null> {
+    const normalized = this.norm(rel);
+
+    if (this.deleted.has(normalized)) {
+      return null;
+    }
+
+    if (this.overlay.has(normalized)) {
+      return this.overlay.get(normalized) ?? "";
+    }
+
+    const abs =
+      await this.resolveRealSafe(normalized);
+
+    try {
+      await this.assertFile(abs);
+
+      return await fs.promises.readFile(
+        abs,
+        "utf8",
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  // ============================================================
+  // READ FILE
+  // ============================================================
+
+  async readFile(rel: string): Promise<string> {
+    const normalized = this.norm(rel);
+
+    this.assertNotExcluded(normalized);
+
+    const staged =
+      await this.getEffectiveText(normalized);
+
+    if (staged !== null) {
+      return staged;
+    }
+
+    const abs =
+      await this.resolveRealSafe(normalized);
+
+    await this.assertFile(abs);
+
+    return await fs.promises.readFile(
+      abs,
+      "utf8",
+    );
+  }
+
+  // ============================================================
+  // CREATE FILE
+  // ============================================================
+
+  async createFile(
+    rel: string,
+    content: string,
+  ): Promise<string> {
     if (!this.config.tools.allowFileCreation) {
       throw new Error("File creation disabled");
     }
 
-    this.assertNotExcluded(rel, "create_File");
-    const key = this.norm(rel);
-    const abs = this.resolveSafe(rel);
+    const normalized = this.norm(rel);
 
-    if (fs.existsSync(abs) && !this.deleted.has(key)) {
-      throw new Error(`Create_file:already exists:${rel}`);
+    this.assertNotProtected(normalized);
+    this.assertNotExcluded(normalized);
+
+    const abs =
+      await this.resolveRealSafe(normalized);
+
+    if ((await this.pathExists(abs)) && !this.deleted.has(normalized)) {
+      throw new Error(
+        `File already exists: ${normalized}`,
+      );
     }
 
-    this.deleted.delete(key);
-    this.overlay.set(key, content);
+    this.overlay.set(
+      normalized,
+      content,
+    );
+
+    this.deleted.delete(normalized);
+
     this.tracker.log({
       type: "file_create",
-      path: key,
-      details: { after: content },
+      path: normalized,
+      details: {
+        after: content,
+      },
       status: "pending",
+      sessionId: this.config.sessionId,
+      userId: this.config.userId
     });
-    return `Stagged new file ${key}`;
+
+    return `Staged new file: ${normalized}`;
   }
 
-  modifyFile(rel: string, content: string): string {
+  // ============================================================
+  // MODIFY FILE
+  // ============================================================
+
+  async modifyFile(
+    rel: string,
+    content: string,
+  ): Promise<string> {
     if (!this.config.tools.allowFileModification) {
-      throw new Error("File creation disabled");
-    }
-    this.assertNotExcluded(rel, "modify_file");
-
-    //this will provide the file content
-    const before = this.getEffectiveText(rel);
-    if (before === undefined) {
-      throw new Error(`Modify_file:file not found`);
+      throw new Error("File modification disabled");
     }
 
-    const key = this.norm(rel);
-    this.overlay.set(key, content);
+    const normalized = this.norm(rel);
+
+    this.assertNotProtected(normalized);
+    this.assertNotExcluded(normalized);
+
+    const current =
+      await this.getEffectiveText(normalized);
+
+    if (current === null) {
+      throw new Error(
+        `File does not exist: ${normalized}`,
+      );
+    }
+
+    this.overlay.set(
+      normalized,
+      content,
+    );
+
+    this.deleted.delete(normalized);
+
     this.tracker.log({
       type: "file_modify",
-      path: key,
-      details: { before, after: content },
+      path: normalized,
+      details: {
+        before: current,
+        after: content,
+      },
       status: "pending",
+      sessionId: this.config.sessionId,
+      userId: this.config.userId
     });
-    return `Staged update: ${key}`;
+
+    return `Staged update: ${normalized}`;
   }
 
-  deleteFile(rel: string): string {
+  // ============================================================
+  // DELETE FILE
+  // ============================================================
+
+  async deleteFile(
+    rel: string,
+  ): Promise<string> {
     if (!this.config.tools.allowFileModification) {
-      throw new Error("File deletion failed");
+      throw new Error("File modification disabled");
     }
 
-    this.assertNotExcluded(rel, "delete_file");
-    const before = this.getEffectiveText(rel);
+    const normalized = this.norm(rel);
 
-    if (before === undefined) {
-      throw new Error(`delete_file:file not found:${rel}`);
+    this.assertNotProtected(normalized);
+    this.assertNotExcluded(normalized);
+
+    const current =
+      await this.getEffectiveText(normalized);
+
+    if (current === null) {
+      throw new Error(`File does not exist: ${normalized}`);
     }
-    const key = this.norm(rel);
-    this.overlay.delete(key);
-    this.deleted.add(key);
+
+    this.deleted.add(normalized);
+    this.overlay.delete(normalized);
 
     this.tracker.log({
       type: "file_delete",
-      path: key,
-      details: { before },
+      path: normalized,
+      details: {
+        before: current ?? "",
+      },
       status: "pending",
+      sessionId: this.config.sessionId,
+      userId: this.config.userId
     });
 
-    return `Stagged delete: ${key}`;
+    return `Staged deletion: ${normalized}`;
   }
 
-  createFolder(rel: string): string {
+  // ============================================================
+  // CREATE FOLDER
+  // ============================================================
+
+  async createFolder(
+    rel: string,
+  ): Promise<string> {
     if (!this.config.tools.allowFolderCreation) {
       throw new Error("Folder creation disabled");
     }
 
-    this.assertNotExcluded(rel, "create_folder");
-    const key = this.norm(rel);
+    const normalized = this.norm(rel);
+
+    this.assertNotProtected(normalized);
+    this.assertNotExcluded(normalized);
+
+    const abs =
+      await this.resolveRealSafe(normalized);
+
+    if (await this.pathExists(abs)) {
+      throw new Error(
+        `Path already exists: ${normalized}`,
+      );
+    }
+
     this.tracker.log({
       type: "folder_create",
-      path: key,
-      details: { after: key },
+      path: normalized,
+      details: { after: normalized },
       status: "pending",
+      sessionId: this.config.sessionId,
+      userId: this.config.userId
     });
-    return `Stagged new folder ${key}`;
+
+    return `Staged new folder: ${normalized}`;
   }
 
-  listFiles(rel: string, recursive: boolean): string {
-    this.assertNotExcluded(rel, "list_files");
-    const abs = this.resolveSafe(rel);
-    if (!fs.existsSync(abs))
-      throw new Error(`list_files:folder not found:${rel}`);
+  // ============================================================
+  // DELETE FOLDER
+  // ============================================================
 
-    const lines: string[] = [];
-    //dir-it is mainly used for get the directory
-    //prefix-it is mainly used for get the prefix of the directory like / or //
-    const walk = (dir: string, prefix: string) => {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const ent of entries) {
-        const full = path.join(dir, ent.name);
-        const relpath = path.relative(this.config.codebasePath, full);
-        //suppose  the folder contains the .env file and the agent tries to list all files in the folder, it will skip that file and continue to the next one.
-        if (this.excluded(relpath)) continue;
-        //wheather it is a directory
-        if (ent.isDirectory()) {
-          lines.push(`${prefix}${ent.name}/`);
+  async deleteFolder(
+    rel: string,
+  ): Promise<string> {
+    const normalized = this.norm(rel);
+
+    this.assertNotProtected(normalized);
+    this.assertNotExcluded(normalized);
+
+    const abs =
+      await this.resolveRealSafe(normalized);
+
+    if (!(await this.pathExists(abs))) {
+      throw new Error(
+        `Folder does not exist: ${normalized}`,
+      );
+    }
+
+    await this.assertDirectory(abs);
+
+    throw new Error("Folder deletion is not supported");
+  }
+
+  // ============================================================
+  // LIST FILES
+  // ============================================================
+
+  async listFiles(
+    rel = ".",
+    recursive = true,
+  ): Promise<string> {
+    const normalized =
+      rel === "."
+        ? ""
+        : this.norm(rel);
+
+    if (normalized) {
+      this.assertNotExcluded(normalized);
+    }
+
+    const root =
+      await this.resolveRealSafe(
+        normalized || ".",
+      );
+
+    await this.assertDirectory(root);
+
+    const output: string[] = [];
+
+    const walk = async (
+      current: string,
+    ): Promise<void> => {
+      const entries =
+        await fs.promises.readdir(
+          current,
+          { withFileTypes: true },
+        );
+
+      entries.sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+
+      for (const entry of entries) {
+        const absolute =
+          path.join(
+            current,
+            entry.name,
+          );
+
+        const relative =
+          this.relativeToWorkspace(
+            absolute,
+          );
+
+        if (this.excluded(relative)) {
+          continue;
+        }
+
+        /**
+         * Never recursively follow symlinks.
+         */
+        if (entry.isSymbolicLink()) {
+          continue;
+        }
+
+        if (entry.isDirectory()) {
+          output.push(
+            `${relative}/`,
+          );
+
           if (recursive) {
-            walk(full, `${prefix}${ent.name}/`);
+            await walk(absolute);
           }
-        } else {
-          lines.push(`${prefix}${ent.name}`);
+          continue;
+        }
+
+        if (entry.isFile()) {
+          output.push(relative);
         }
       }
     };
 
-    if (fs.statSync(abs).isDirectory()) walk(abs, "");
-    else lines.push(path.relative(this.config.codebasePath, abs));
+    await walk(root);
 
-    const out = lines.sort().join("\n");
-    this.tracker.log({
-      type: "code_analysis",
-      path: this.norm(rel),
-      details: { after: out },
-      status: "executed",
-    });
-    return out || "(empty";
+    return output.length
+      ? output.join("\n")
+      : "(empty)";
   }
 
-  searchFiles(
-    rootRel: string,
-    globPattern: string,
+  // ============================================================
+  // SEARCH FILES
+  // ============================================================
+
+  async searchFiles(
+    rel = ".",
+    pattern = "**/*",
     contentQuery?: string,
-  ): string {
-    this.assertNotExcluded(rootRel, "search_files");
-    const rootAbs = this.resolveSafe(rootRel);
-    if (!fs.existsSync(rootAbs) || !fs.statSync(rootAbs).isDirectory()) {
-      throw new Error(`search_files:folder not found:${rootRel}`);
-    }
+  ): Promise<string> {
+    const normalizedRoot =
+      rel === "."
+        ? ""
+        : this.norm(rel);
+
+    const maxResults = 50;
+    const glob = this.globToRegExp(pattern);
+
+    const root =
+      await this.resolveRealSafe(
+        normalizedRoot || ".",
+      );
+
+    await this.assertDirectory(root);
 
     const results: string[] = [];
-    const regexFromGlob = (g: string): RegExp => {
-      //This function converts a glob pattern into a regular expression.
-      const escaped = g
-        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-        .replace(/\*\*/g, "§§")
-        .replace(/\*/g, "[^/\\\\]*")
-        .replace(/§§/g, ".*")
-        .replace(/\?/g, ".");
-      return new RegExp(`^${escaped}$`, "i");
-    };
 
-    //src\utils\*.ts--->src/utils/*.ts
-    const nameRe = regexFromGlob(globPattern.replace(/\\/g, "/"));
-    //log the search results
-    const walk = (dir: string) => {
-      //This reads everything inside the directory.
-      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, ent.name);
-        const rel = path
-          .relative(this.config.codebasePath, full)
-          .split(path.sep)
-          .join("/");
-        if (this.excluded(rel)) continue;
-        if (ent.isDirectory()) walk(full);
-        else if (nameRe.test(rel)) {
-          if (contentQuery && isProbablyTextFile(full)) {
-            const text = this.getEffectiveText(rel);
-            if (text && !text.includes(contentQuery)) continue;
-            const Readtext = fs.readFileSync(full, "utf-8");
-            if (!Readtext.includes(contentQuery)) continue;
-          }
-          results.push(rel);
+    const walk = async (
+      current: string,
+    ): Promise<void> => {
+      if (
+        results.length >= maxResults
+      ) {
+        return;
+      }
+
+      const entries =
+        await fs.promises.readdir(
+          current,
+          { withFileTypes: true },
+        );
+
+      for (const entry of entries) {
+        if (
+          results.length >= maxResults
+        ) {
+          return;
         }
+
+        const absolute =
+          path.join(
+            current,
+            entry.name,
+          );
+
+        const relative =
+          this.relativeToWorkspace(
+            absolute,
+          );
+
+        if (this.excluded(relative)) {
+          continue;
+        }
+
+        /**
+         * Do not follow symbolic links.
+         */
+        if (entry.isSymbolicLink()) {
+          continue;
+        }
+
+        if (entry.isDirectory()) {
+          await walk(absolute);
+          continue;
+        }
+
+        if (!entry.isFile()) {
+          continue;
+        }
+
+        if (!glob.test(relative)) continue;
+
+        /**
+         * IMPORTANT:
+         *
+         * Search the effective staged content,
+         * not only the content on disk.
+         */
+        const text =
+          await this.getEffectiveText(
+            relative,
+          );
+
+        if (
+          text === null ||
+          (contentQuery !== undefined && !text.includes(contentQuery))
+        ) {
+          continue;
+        }
+
+        results.push(relative);
       }
     };
-    if (fs.statSync(rootAbs).isDirectory()) walk(rootAbs);
-    else {
-      const relP = path
-        .relative(this.config.codebasePath, rootAbs)
-        .split(path.sep)
-        .join("/");
-      results.push(relP);
-    }
-    const out = [...new Set(results)].sort().join("\n");
-    this.tracker.log({
-      type: "code_analysis",
-      path: this.norm(rootRel),
-      details: { after: out || "(no matches)", toolName: "search_files" },
-      status: "executed",
-    });
-    return out || "(no matches)";
+
+    await walk(root);
+
+    return results.length
+      ? results.join("\n")
+      : "(no matches)";
   }
 
-  analyzeCodebase(rootRel: string): string {
-    const rootAbs = this.resolveSafe(rootRel);
-    if (!fs.existsSync(rootAbs) || !fs.statSync(rootAbs).isDirectory()) {
-      throw new Error(`analyze_codebase:folder not found:${rootRel}`);
+  // ============================================================
+  // ANALYZE CODEBASE
+  // ============================================================
+
+  async analyzeCodebase(_rel = "."): Promise<string> {
+    const files =
+      await this.listFiles(".");
+
+    const lines =
+      files === "(empty)"
+        ? []
+        : files.split("\n");
+
+    const extensions =
+      new Map<string, number>();
+
+    for (const file of lines) {
+      const ext =
+        path.extname(file)
+          .toLowerCase() || "[no extension]";
+
+      extensions.set(
+        ext,
+        (extensions.get(ext) ?? 0) + 1,
+      );
     }
 
-    let files = 0;
-    let dirs = 0;
+    const extensionSummary =
+      [...extensions.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(
+          ([extension, count]) =>
+            `${extension}: ${count}`,
+        )
+        .join("\n");
 
-    const walk = (dir: string) => {
-      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, ent.name);
-        const relip = path.relative(this.config.codebasePath, full);
-        if (this.excluded(relip)) continue;
-        if (ent.isDirectory()) {
-          dirs++;
-          walk(full);
-        } else {
-          files++;
-        }
-      }
-    };
-
-    if (fs.statSync(rootAbs).isDirectory()) walk(rootAbs);
-    else files = 1;
-
-    const summary = `Files: ${files} | Directories: ${dirs}`;
-    this.tracker.log({
-      type: "code_analysis",
-      path: this.norm(rootRel),
-      details: { after: summary, toolName: "analyze_codebase" },
-      status: "executed",
-    });
-    return summary;
+    return [
+      "Codebase analysis",
+      "=================",
+      "",
+      `Workspace: ${this.config.codebasePath}`,
+      `Files: ${lines.length}`,
+      "",
+      "Extensions:",
+      extensionSummary || "(none)",
+    ].join("\n");
   }
 
-  queueShell(command: string): string {
+  // ============================================================
+  // SHELL COMMAND
+  // ============================================================
+
+  /**
+   * Queue a shell command for approval.
+   *
+   * IMPORTANT:
+   *
+   * The command is checked BEFORE it reaches the tracker.
+   */
+  async queueShell(
+    command: string,
+  ): Promise<string> {
+    const policy =
+      checkCommandPolicy(command);
+
+    if (!policy.allowed) {
+      throw new Error(
+        `Command blocked by security policy: ${policy.reason}`,
+      );
+    }
+
     if (!this.config.tools.allowShellExecution) {
       throw new Error("Shell execution disabled");
     }
+
     this.tracker.log({
       type: "tool_execute",
-      path:"shell",
-      details: { command, toolName: "shell" },
-      status: "pending",
-  });
-
-    return 'shell queued:${command}';
-  }
-
-  skillRoots(): string[] {
-    const extra =
-      process.env.SKILLS_DIRS?.split(/[;]/)
-        .map((s) => s.trim())
-        .filter(Boolean) ?? [];
-    return [
-      path.join(this.config.codebasePath, "skills"),
-      ...extra,
-      path.join(homedir(), ".cursor/skills"),
-      path.join(homedir(), ".claude/skills"),
-    ];
-  }
-
-  listSkills(): string {
-    const lines: string[] = [];
-    for (const root of this.skillRoots()) {
-      if (!fs.existsSync(root)) continue;
-      const walk = (dir: string) => {
-        for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-          const full = path.join(dir, ent.name);
-          if (ent.isDirectory()) walk(full);
-          else if (ent.name === "SKILL.md") lines.push(full);
-        }
-      };
-      walk(root);
-    }
-    const out = lines.sort().join("\n");
-    this.tracker.log({
-      type: "code_analysis",
-      path: "skills",
-      details: { after: out || "(none)", toolName: "list_skills" },
-      status: "executed",
-    });
-    return out || "(none)";
-  }
-
-  searchSkills(query: string): string {
-    const needle = query.trim().toLocaleLowerCase();
-    if (!needle) throw new Error("search_skills: query is required");
-
-    const terms = needle.split(/\s+/).filter(Boolean);
-    const matches: Array<{
-      path: string;
-      name: string;
-      description: string;
-      score: number;
-    }> = [];
-
-    for (const skillPath of this.listSkills().split("\n")) {
-      if (!skillPath || skillPath === "(none)") continue;
-      const content = fs.readFileSync(skillPath, "utf8");
-      const frontmatter = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
-      const fields = frontmatter?.[1] ?? "";
-      const name = fields.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? path.basename(path.dirname(skillPath));
-      const description = fields.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? "";
-      const searchable = `${name}\n${description}\n${content}`.toLocaleLowerCase();
-
-      if (!terms.every((term) => searchable.includes(term))) continue;
-      const lowerName = name.toLocaleLowerCase();
-      const lowerDescription = description.toLocaleLowerCase();
-      const score =
-        (lowerName === needle ? 100 : 0) +
-        (lowerName.includes(needle) ? 30 : 0) +
-        (lowerDescription.includes(needle) ? 20 : 0) +
-        terms.filter((term) => lowerName.includes(term)).length * 5;
-      matches.push({ path: skillPath, name, description, score });
-    }
-
-    const out = matches
-      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
-      .map((skill) => `name: ${skill.name}\npath: ${skill.path}\ndescription: ${skill.description}`)
-      .join("\n\n");
-    this.tracker.log({
-      type: "code_analysis",
-      path: "skills",
+      path: "shell",
       details: {
-        after: out || "(no matches)",
-        toolName: "search_skills",
-        toolResult: `query: ${query}`,
+        command,
+        toolName: "shell",
       },
-      status: "executed",
+      status: "pending",
+      sessionId: this.config.sessionId,
+      userId: this.config.userId
     });
-    return out || "(no matches)";
+
+    return `Shell command queued: ${command}`;
   }
 
-  listSkillResources(skillPath: string): string {
-    const skillFile = path.isAbsolute(skillPath)
-      ? path.normalize(skillPath)
-      : path.normalize(path.resolve(this.config.codebasePath, skillPath));
-    const allowed = this.skillRoots().some((root) => {
-      const resolvedRoot = path.resolve(root);
-      return skillFile === resolvedRoot || skillFile.startsWith(resolvedRoot + path.sep);
-    });
-    if (!allowed || path.basename(skillFile) !== "SKILL.md") {
-      throw new Error("list_skill_resources: path must be a SKILL.md under a skill root");
-    }
+  // ============================================================
+  // APPLY APPROVED ACTIONS
+  // ============================================================
 
-    const skillDir = path.dirname(skillFile);
-    const resourceDirs = ["resources", "references", "scripts", "assets"];
-    const resources: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else resources.push(full);
-      }
-    };
-    for (const name of resourceDirs) {
-      const dir = path.join(skillDir, name);
-      if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) walk(dir);
-    }
-
-    const out = resources.sort().join("\n");
-    this.tracker.log({
-      type: "code_analysis",
-      path: skillFile,
-      details: { after: out || "(no resources)", toolName: "list_skill_resources" },
-      status: "executed",
-    });
-    return out || "(no resources)";
-  }
-
- readSkill(skillPath: string): string {
-    const abs = path.isAbsolute(skillPath)
-      ? path.normalize(skillPath)
-      : path.normalize(path.resolve(this.config.codebasePath, skillPath));
-    const allowed = this.skillRoots().some((root) => {
-      const r = path.resolve(root);
-      return abs === r || abs.startsWith(r + path.sep);
-    });
-    if (!allowed) throw new Error("read_skill: outside skill roots");
-    const text = fs.readFileSync(abs, "utf8");
-    this.tracker.log({
-      type: "code_analysis",
-      path: abs,
-      details: { after: text, toolName: "read_skill" },
-      status: "executed",
-    });
-    return text;
-  }
-
-   applyApprovedFromTracker(): { errors: string[] } {
+  /**
+   * Apply actions that have been approved by the user.
+   *
+   * IMPORTANT:
+   *
+   * The security policy is checked AGAIN here.
+   *
+   * Never assume that something being approved earlier means
+   * it is safe to execute now.
+   */
+  async applyApprovedFromTracker(): Promise<{ errors: string[] }> {
+    const actions = this.tracker.getActions().filter(
+      (action) => action.status === "approved",
+    );
     const errors: string[] = [];
-    const all = [...this.tracker.getActions()];
 
-    for (const a of all.filter(
-      (x) => x.type === "folder_create" && x.status === "approved",
-    )) {
+    for (const action of actions) {
       try {
-        fs.mkdirSync(this.resolveSafe(a.path), { recursive: true });
-      } catch (e) {
-        errors.push(String(e));
-      }
-    }
+        switch (action.type) {
+          case "file_create": {
+            await this.applyCreateFile(action);
+            break;
+          }
 
-    const fileOps = all
-      .filter(
-        (a) =>
-          (a.type === "file_create" ||
-            a.type === "file_modify" ||
-            a.type === "file_delete") &&
-          a.status === "approved",
-      )
-      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+          case "file_modify": {
+            await this.applyModifyFile(action);
+            break;
+          }
 
-    const lastByPath = new Map<string, ActionLog>();
-    for (const a of fileOps) lastByPath.set(this.norm(a.path), a);
+          case "file_delete": {
+            await this.applyDeleteFile(action);
+            break;
+          }
+          
 
-    for (const [p, a] of lastByPath) {
-      try {
-        if (a.type === "file_delete")
-          fs.rmSync(this.resolveSafe(p), { force: true });
-        else {
-          const target = this.resolveSafe(p);
-          fs.mkdirSync(path.dirname(target), { recursive: true });
-          fs.writeFileSync(target, a.details.after ?? "", "utf8");
+          case "folder_create": {
+            await this.applyCreateFolder(action);
+            break;
+          }
+
+          case "tool_execute": {
+            await this.applyShell(action);
+            break;  
+          }
+
+          default:
+            throw new Error(
+              `Unsupported action type: ${action.type}`,
+            );
         }
-      } catch (e) {
-        errors.push(String(e));
-      }
-    }
 
-    for (const a of all.filter(
-      (x) => x.type === "tool_execute" && x.status === "approved",
-    )) {
-      const cmd = a.details.command;
-      if (!cmd) continue;
-      const r = spawnSync(cmd, {
-        shell: true,
-        cwd: this.config.codebasePath,
-        encoding: "utf8",
-        maxBuffer: 16 * 1024 * 1024,
-      });
-      if (r.status && r.status !== 0)
-        errors.push(`shell exit ${r.status}: ${cmd}`);
+        this.tracker.updateStatus(action.id, "applied");
+
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : String(error);
+
+        this.tracker.updateStatus(action.id, "failed", undefined, message);
+        errors.push(`Failed to apply '${action.path}': ${message}`);
+      }
     }
 
     return { errors };
   }
 
-  clearStaging():void{
-    this.overlay.clear()
-    this.deleted.clear()
+  // ============================================================
+  // APPLY FILE ACTIONS
+  // ============================================================
+
+  private async applyCreateFile(
+    action: ActionLog,
+  ): Promise<void> {
+    const rel =
+      this.norm(action.path);
+
+    this.assertNotProtected(rel);
+    this.assertNotExcluded(rel);
+
+    const target =
+      await this.resolveRealSafe(rel);
+
+    if (await this.pathExists(target)) {
+      throw new Error(
+        `Cannot create existing file: ${rel}`,
+      );
+    }
+
+    await fs.promises.mkdir(
+      path.dirname(target),
+      {
+        recursive: true,
+      },
+    );
+
+    await fs.promises.writeFile(
+      target,
+      action.details?.after ?? "",
+      "utf8",
+    );
   }
-  
+
+  private async applyModifyFile(
+    action: ActionLog,
+  ): Promise<void> {
+    const rel =
+      this.norm(action.path);
+
+    this.assertNotProtected(rel);
+    this.assertNotExcluded(rel);
+
+    const target =
+      await this.resolveRealSafe(rel);
+
+    await this.assertFile(target);
+
+    /**
+     * Verify that the current content is still the
+     * content that was approved.
+     *
+     * This prevents applying an old approval over a
+     * file that changed after approval.
+     */
+    const current =
+      await fs.promises.readFile(
+        target,
+        "utf8",
+      );
+
+    const expectedBefore =
+      action.details?.before;
+
+    if (
+      typeof expectedBefore === "string" &&
+      current !== expectedBefore
+    ) {
+      throw new Error(
+        `File changed after approval: ${rel}`,
+      );
+    }
+
+    await fs.promises.writeFile(
+      target,
+      action.details?.after ?? "",
+      "utf8",
+    );
+  }
+
+  private async applyDeleteFile(
+    action: ActionLog,
+  ): Promise<void> {
+    const rel =
+      this.norm(action.path);
+
+    this.assertNotProtected(rel);
+    this.assertNotExcluded(rel);
+
+    const target =
+      await this.resolveRealSafe(rel);
+
+    if (!(await this.pathExists(target))) {
+      return;
+    }
+
+    await this.assertFile(target);
+
+    /**
+     * Optional approval consistency check.
+     */
+    const expectedBefore =
+      action.details?.before;
+
+    if (
+      typeof expectedBefore === "string"
+    ) {
+      const current =
+        await fs.promises.readFile(
+          target,
+          "utf8",
+        );
+
+      if (current !== expectedBefore) {
+        throw new Error(
+          `File changed after approval: ${rel}`,
+        );
+      }
+    }
+
+    await fs.promises.unlink(target);
+  }
+
+  private async applyCreateFolder(
+    action: ActionLog,
+  ): Promise<void> {
+    const rel =
+      this.norm(action.path);
+
+    this.assertNotProtected(rel);
+    this.assertNotExcluded(rel);
+
+    const target =
+      await this.resolveRealSafe(rel);
+
+    if (await this.pathExists(target)) {
+      throw new Error(
+        `Folder already exists: ${rel}`,
+      );
+    }
+
+    await fs.promises.mkdir(
+      target,
+      {
+        recursive: true,
+      },
+    );
+  }
+
+  private async applyDeleteFolder(
+    action: ActionLog,
+  ): Promise<void> {
+    const rel =
+      this.norm(action.path);
+
+    this.assertNotProtected(rel);
+    this.assertNotExcluded(rel);
+
+    /**
+     * Never allow deleting workspace root.
+     */
+    if (!rel) {
+      throw new Error(
+        "Deleting workspace root is forbidden",
+      );
+    }
+
+    const target =
+      await this.resolveRealSafe(rel);
+
+    if (!(await this.pathExists(target))) {
+      return;
+    }
+
+    await this.assertDirectory(target);
+
+    await fs.promises.rm(
+      target,
+      {
+        recursive: true,
+        force: false,
+      },
+    );
+  }
+
+  // ============================================================
+  // APPLY SHELL
+  // ============================================================
+
+  private async applyShell(
+    action: ActionLog,
+  ): Promise<void> {
+    const command =
+      action.details?.command ??
+      action.path;
+
+    if (
+      typeof command !== "string" ||
+      !command.trim()
+    ) {
+      throw new Error(
+        "Invalid shell command",
+      );
+    }
+
+    /**
+     * SECURITY:
+     *
+     * Re-check the command at execution time.
+     */
+    const policy =
+      checkCommandPolicy(command);
+
+    if (!policy.allowed) {
+      throw new Error(
+        `Command blocked by security policy: ${policy.reason}`,
+      );
+    }
+
+    if (
+      !policy.executable ||
+      !policy.args
+    ) {
+      throw new Error(
+        "Command policy did not produce executable/arguments",
+      );
+    }
+
+    const result =
+      await executeSandboxed(
+        policy.executable,
+        policy.args,
+        {
+          cwd: this.config.codebasePath,
+
+          /**
+           * Maximum execution time.
+           */
+          timeoutMs: 60_000,
+
+          /**
+           * Maximum captured output.
+           */
+          maxOutputBytes:
+            2 * 1024 * 1024,
+        },
+      );
+
+    if (result.timedOut) {
+      throw new Error(
+        `Command timed out after 60 seconds: ${command}`,
+      );
+    }
+
+    if (result.exitCode !== 0) {
+      const stderr =
+        result.stderr.trim();
+
+      throw new Error(
+        [
+          `Command failed with exit code ${result.exitCode}`,
+          stderr
+            ? `stderr: ${stderr}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+    }
+  }
+
+  // ============================================================
+  // STAGING MANAGEMENT
+  // ============================================================
+
+  clearStaging(): void {
+    this.overlay.clear();
+    this.deleted.clear();
+  }
+
+  getStagedFiles(): string[] {
+    return [
+      ...new Set([
+        ...this.overlay.keys(),
+        ...this.deleted,
+      ]),
+    ].sort();
+  }
+
+  getStagedContent(
+    rel: string,
+  ): string | null {
+    const normalized =
+      this.norm(rel);
+
+    if (this.deleted.has(normalized)) {
+      return null;
+    }
+
+    return (
+      this.overlay.get(normalized) ??
+      null
+    );
+  }
+
+  // ============================================================
+  // SKILLS
+  // ============================================================
+
+  private skillRoots(): string[] {
+    return [
+      path.join(
+        this.config.codebasePath,
+        "skills",
+      ),
+
+      ...(process.env.SKILLS_DIRS?.split(";")
+        .map((item) => item.trim())
+        .filter(Boolean) ?? []),
+
+      path.join(
+        homedir(),
+        ".cursor",
+        "skills",
+      ),
+
+      path.join(
+        homedir(),
+        ".claude",
+        "skills",
+      ),
+    ];
+  }
+
+  async listSkills(): Promise<string> {
+    const skills: string[] = [];
+
+    for (const root of this.skillRoots()) {
+      if (!(await this.pathExists(root))) {
+        continue;
+      }
+
+      const walk = async (current: string): Promise<void> => {
+        const entries = await fs.promises.readdir(current, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isSymbolicLink()) continue;
+          const target = path.join(current, entry.name);
+          if (entry.isDirectory()) await walk(target);
+          else if (entry.isFile() && entry.name === "SKILL.md") skills.push(target);
+        }
+      };
+
+      try { await walk(root); } catch { continue; }
+    }
+
+    return skills.sort().join("\n") || "(none)";
+  }
+
+  private async isInsideSkillRoot(
+    target: string,
+  ): Promise<boolean> {
+    const realTarget =
+      await fs.promises.realpath(target);
+
+    for (const root of this.skillRoots()) {
+      try {
+        const realRoot =
+          await fs.promises.realpath(root);
+
+        const relative =
+          path.relative(
+            realRoot,
+            realTarget,
+          );
+
+        if (
+          !relative.startsWith("..") &&
+          !path.isAbsolute(relative)
+        ) {
+          return true;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return false;
+  }
+
+  private resolveSkillFile(skillPath: string): string {
+    const skillFile = path.resolve(this.config.codebasePath, skillPath);
+    if (path.basename(skillFile) !== "SKILL.md") {
+      throw new Error("Skill path must reference a SKILL.md file");
+    }
+    return skillFile;
+  }
+
+  async readSkill(skillPath: string): Promise<string> {
+    const skillFile = this.resolveSkillFile(skillPath);
+
+    if (
+      !(await this.isInsideSkillRoot(
+        skillFile,
+      ))
+    ) {
+      throw new Error(
+        "Skill path escapes skill root",
+      );
+    }
+
+    return fs.promises.readFile(skillFile, "utf8");
+  }
+
+  async listSkillResources(skillPath: string): Promise<string> {
+    const skillFile = this.resolveSkillFile(skillPath);
+    if (!(await this.isInsideSkillRoot(skillFile))) {
+      throw new Error("Skill path escapes skill root");
+    }
+    const skillDir = path.dirname(skillFile);
+
+    const resources: string[] = [];
+
+    const walk = async (
+      current: string,
+    ): Promise<void> => {
+      const entries =
+        await fs.promises.readdir(
+          current,
+          {
+            withFileTypes: true,
+          },
+        );
+
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) {
+          continue;
+        }
+
+        const absolute =
+          path.join(
+            current,
+            entry.name,
+          );
+
+        if (entry.isDirectory()) {
+          await walk(absolute);
+          continue;
+        }
+
+        if (entry.isFile()) {
+          resources.push(
+            path.relative(
+              skillDir,
+              absolute,
+            ).split(path.sep).join("/"),
+          );
+        }
+      }
+    };
+
+    for (const name of ["resources", "references", "scripts", "assets"]) {
+      const resourceDir = path.join(skillDir, name);
+      if (await this.pathExists(resourceDir)) await walk(resourceDir);
+    }
+
+    return resources.length
+      ? resources.sort().join("\n")
+      : "(no resources)";
+  }
+
+  async searchSkills(query: string): Promise<string> {
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) throw new Error("search_skills: query is required");
+    const paths = (await this.listSkills()).split("\n").filter((item) => item !== "(none)");
+    const matches: string[] = [];
+    for (const skillFile of paths) {
+      const content = await fs.promises.readFile(skillFile, "utf8");
+      if (terms.every((term) => content.toLowerCase().includes(term))) matches.push(skillFile);
+    }
+    return matches.sort().join("\n") || "(no matches)";
+  }
+
+  // ============================================================
+  // UTILITY METHODS
+  // ============================================================
+
+  async exists(
+    rel: string,
+  ): Promise<boolean> {
+    const normalized =
+      this.norm(rel);
+
+    this.assertNotExcluded(normalized);
+
+    try {
+      const abs =
+        await this.resolveRealSafe(
+          normalized,
+        );
+
+      return await this.pathExists(abs);
+    } catch {
+      return false;
+    }
+  }
+
+  async isDirectory(
+    rel: string,
+  ): Promise<boolean> {
+    const normalized =
+      this.norm(rel);
+
+    this.assertNotExcluded(normalized);
+
+    try {
+      const abs =
+        await this.resolveRealSafe(
+          normalized,
+        );
+
+      const stat =
+        await fs.promises.stat(abs);
+
+      return stat.isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  async isFile(
+    rel: string,
+  ): Promise<boolean> {
+    const normalized =
+      this.norm(rel);
+
+    this.assertNotExcluded(normalized);
+
+    try {
+      const abs =
+        await this.resolveRealSafe(
+          normalized,
+        );
+
+      const stat =
+        await fs.promises.stat(abs);
+
+      return stat.isFile();
+    } catch {
+      return false;
+    }
+  }
 }
