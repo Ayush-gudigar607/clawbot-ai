@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import { confirm, isCancel, text } from "@clack/prompts";
-import { ToolLoopAgent, stepCountIs } from "ai";
+import { ToolLoopAgent, stepCountIs, type LanguageModel } from "ai";
 import { getAgentModel } from "../../ai/ai.config.ts";
 import { ActionTracker } from "../agents/action-tracker.ts";
 import { ToolExecutor } from "../agents/tool-executor.ts";
@@ -55,7 +55,7 @@ export async function runPlanMode():Promise<void>
   {
     console.log(chalk.cyan(`\nExecuting step: ${step.title}\n`));
     const agent=new ToolLoopAgent({
-      model:getAgentModel(),
+    model: getAgentModel() as unknown as LanguageModel,
       stopWhen:stepCountIs(20),
       tools
     })

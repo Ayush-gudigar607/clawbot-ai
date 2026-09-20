@@ -470,7 +470,7 @@ export class ToolExecutor {
     return [
       path.join(this.config.codebasePath, "skills"),
       ...extra,
-      path.join(homedir(), ".cursor/skills-cursor"),
+      path.join(homedir(), ".cursor/skills"),
       path.join(homedir(), ".claude/skills"),
     ];
   }

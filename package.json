@@ -13,6 +13,7 @@
     "typescript": "^7"
   },
   "dependencies": {
+    "@ai-sdk/google": "^4.0.76",
     "@clack/core": "^1.4.3",
     "@clack/prompts": "^1.7.0",
     "@mendable/firecrawl-js": "^4.40.0",

@@ -3,7 +3,7 @@ import { defaultAgentConfig } from "./types";
 import { ActionTracker } from "./action-tracker";
 import { ToolExecutor } from "./tool-executor";
 import { createAgentTools } from "./agent-tool";
-import { stepCountIs, ToolLoopAgent } from "ai";
+import { stepCountIs, ToolLoopAgent, type LanguageModel } from "ai";
 import { getAgentModel } from "../../ai";
 import chalk from "chalk";
 import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
@@ -28,7 +28,7 @@ export async function runAgentMode() {
   const tools = createAgentTools(executor);
 
   const agent = new ToolLoopAgent({
-    model: getAgentModel(),
+    model: getAgentModel() as unknown as LanguageModel,
     //stepCountIs is a function that returns a function that checks if the step count is greater than or equal to the given number
     stopWhen: stepCountIs(40),
     instructions: [

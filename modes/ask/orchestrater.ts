@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import { confirm, isCancel, text } from "@clack/prompts";
-import { ToolLoopAgent, stepCountIs, tool } from "ai";
+import { ToolLoopAgent, stepCountIs, tool, type LanguageModel } from "ai";
 import { z } from "zod";
 import { getAgentModel } from "../../ai";
 import { ActionTracker } from "../agents/action-tracker";
@@ -128,7 +128,7 @@ export async function runAskMode()
     }
 
     const agent=new ToolLoopAgent({
-        model:getAgentModel(),
+    model: getAgentModel() as unknown as LanguageModel,
         stopWhen:stepCountIs(20),
         instructions: "For a task covered by a skill, call search_skills, read the selected SKILL.md, and call list_skill_resources. Read only resources explicitly referenced by the skill or needed to answer the request.",
         tools
