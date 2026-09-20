@@ -92,6 +92,14 @@ export function createAgentTools(executor: ToolExecutor) {
           execute:async()=>executor.listSkills()
         }),
 
+        search_skills: tool({
+          description: "Find relevant SKILL.md files by skill name, description, or instructions. Returns matching skill names, paths, and descriptions; use read_skill to load one.",
+          inputSchema: z.object({
+            query: z.string().describe("Task, technology, or capability to find, for example 'docker'"),
+          }),
+          execute: async ({ query }) => executor.searchSkills(query),
+        }),
+
         read_skill:tool({
           description:"Read the content of a skill file",
           inputSchema:z.object({

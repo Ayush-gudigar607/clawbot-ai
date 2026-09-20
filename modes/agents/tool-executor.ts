@@ -498,6 +498,55 @@ export class ToolExecutor {
     return out || "(none)";
   }
 
+  searchSkills(query: string): string {
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) throw new Error("search_skills: query is required");
+
+    const terms = needle.split(/\s+/).filter(Boolean);
+    const matches: Array<{
+      path: string;
+      name: string;
+      description: string;
+      score: number;
+    }> = [];
+
+    for (const skillPath of this.listSkills().split("\n")) {
+      if (!skillPath || skillPath === "(none)") continue;
+      const content = fs.readFileSync(skillPath, "utf8");
+      const frontmatter = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
+      const fields = frontmatter?.[1] ?? "";
+      const name = fields.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? path.basename(path.dirname(skillPath));
+      const description = fields.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? "";
+      const searchable = `${name}\n${description}\n${content}`.toLocaleLowerCase();
+
+      if (!terms.every((term) => searchable.includes(term))) continue;
+      const lowerName = name.toLocaleLowerCase();
+      const lowerDescription = description.toLocaleLowerCase();
+      const score =
+        (lowerName === needle ? 100 : 0) +
+        (lowerName.includes(needle) ? 30 : 0) +
+        (lowerDescription.includes(needle) ? 20 : 0) +
+        terms.filter((term) => lowerName.includes(term)).length * 5;
+      matches.push({ path: skillPath, name, description, score });
+    }
+
+    const out = matches
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+      .map((skill) => `name: ${skill.name}\npath: ${skill.path}\ndescription: ${skill.description}`)
+      .join("\n\n");
+    this.tracker.log({
+      type: "code_analysis",
+      path: "skills",
+      details: {
+        after: out || "(no matches)",
+        toolName: "search_skills",
+        toolResult: `query: ${query}`,
+      },
+      status: "executed",
+    });
+    return out || "(no matches)";
+  }
+
  readSkill(skillPath: string): string {
     const abs = path.isAbsolute(skillPath)
       ? path.normalize(skillPath)

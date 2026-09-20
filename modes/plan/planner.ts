@@ -84,6 +84,15 @@ function readOnlyTools(executor: ToolExecutor) {
       execute: async () => executor.listSkills(),
     }),
 
+    search_skills: tool({
+      description:
+        "Find relevant SKILL.md files by skill name, description, or instructions. Returns matching skill names, paths, and descriptions; use read_skill to load one.",
+      inputSchema: z.object({
+        query: z.string().describe("Task, technology, or capability to find, for example 'docker'"),
+      }),
+      execute: async ({ query }) => executor.searchSkills(query),
+    }),
+
     read_skill: tool({
       description:
         "Read a SKILL.md file. Path must be absolute and under skill roots, or use a path returned by list_skills.",
@@ -101,7 +110,7 @@ const PLAN_INSTRUCTIONS=(codebase:boolean,hasWeb:boolean)=>
     'You are a Plan-Mode planner.You DO NOT modify files.',
      `Workspace:${codebase}`,
      'use read-only tool for codebase/skills research.',
-     'Call list_skills and read the skill most relevant to the user goal before drafting the plan. Use workspace-task when no specialized skill applies.',
+     'Search for a matching skill with search_skills, then read its SKILL.md before drafting the plan. Use workspace-task when no specialized skill applies.',
      hasWeb ? 'web tools are available (web_search/web_crawl/fetch_url).use only when needed.':
      'web tools are not available.',
      'output must match the provided JSON schema.',
