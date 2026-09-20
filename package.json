@@ -6,7 +6,6 @@
   "bin": {
     "clawbot-ai": "./bin/cli.js"
   },
-
   "files": [
     "bin",
     "dist",
@@ -14,8 +13,7 @@
     "README.md",
     "LICENSE"
   ],
-
-    "scripts": {
+  "scripts": {
     "dev": "bun run index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -23,19 +21,15 @@
     "check": "bun run typecheck && bun test",
     "prepublishOnly": "bun run check && bun run build"
   },
-
-    "repository": {
+  "repository": {
     "type": "git",
     "url": "https://github.com/Ayush-gudigar607/clawbot-ai.git"
   },
-
-    "bugs": {
+  "bugs": {
     "url": "https://github.com/Ayush-gudigar607/clawbot-ai/issues"
   },
-
-    "homepage": "https://github.com/Ayush-gudigar607/clawbot-ai",
-
-   "keywords": [
+  "homepage": "https://github.com/Ayush-gudigar607/clawbot-ai",
+  "keywords": [
     "ai",
     "ai-agent",
     "coding-agent",
@@ -47,32 +41,28 @@
     "openrouter",
     "gemini"
   ],
-
-   "engines": {
+  "engines": {
     "node": ">=20"
   },
-
- "devDependencies": {
-  "@types/bun": "latest",
-  "typescript": "^5.9.0"
-},
-
-  
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  },
   "dependencies": {
     "@ai-sdk/google": "^4.0.76",
-    "@clack/core": "^1.4.3",
-    "@clack/prompts": "^1.7.0",
-    "@mendable/firecrawl-js": "^4.40.0",
-    "@openrouter/ai-sdk-provider": "^3.0.0",
+    "@clack/core": "^1.5.1",
+    "@clack/prompts": "^1.8.1",
+    "@mendable/firecrawl-js": "^4.41.0",
+    "@openrouter/ai-sdk-provider": "^3.1.0",
     "@supermemory/tools": "^2.3.0",
     "@types/marked-terminal": "^6.1.1",
-    "@types/node": "^26.4.1",
-    "ai": "^7.0.93",
+    "@types/node": "^26.6.2",
+    "ai": "^7.0.107",
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
     "diff": "^9.0.0",
     "figlet": "^1.11.4",
-    "marked": "^18.0.12",
+    "marked": "^18.0.13",
     "marked-terminal": "^7.3.0",
     "telegraf": "^4.16.3"
   }
