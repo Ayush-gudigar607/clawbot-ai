@@ -369,9 +369,10 @@ export class ToolExecutor {
         .replace(/\?/g, ".");
       return new RegExp(`^${escaped}$`, "i");
     };
+
     //src\utils\*.ts--->src/utils/*.ts
     const nameRe = regexFromGlob(globPattern.replace(/\\/g, "/"));
-
+    //log the search results
     const walk = (dir: string) => {
       //This reads everything inside the directory.
       for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {

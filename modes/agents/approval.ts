@@ -30,6 +30,7 @@ function groupPending(pending: ActionLog[]): ReviewGroup[] {
   const pathEntries = [...byPath.entries()].sort(([a], [b]) =>
     a.localeCompare(b),
   );
+  
   for (const [p, acts] of pathEntries) {
     const sorted = acts.sort(
       (x, y) => x.timestamp.getTime() - y.timestamp.getTime(),
