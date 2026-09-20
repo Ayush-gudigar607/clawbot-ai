@@ -39,7 +39,7 @@ export async function runAgentMode() {
     tools,
   });
 
-  const promptText=await WithMemoryContext(goal.trim());
+  await WithMemoryContext(goal.trim());
 
   try {
     const result = await agent.generate({
