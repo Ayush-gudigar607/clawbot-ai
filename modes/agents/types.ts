@@ -1,5 +1,7 @@
 // This file defines the types and interfaces used for agent actions and configurations.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { userInfo } from "node:os";
+import { env } from "../../src/config/env";
 
 export type ActionType =
   | "file_create"
@@ -110,6 +112,7 @@ export interface ActionLog {
 export interface AgentConfig {
   sessionId: string;
   userId: string;
+  projectId: string;
   codebasePath: string;
   maxFileSizeToRead: number;
   excludePatterns: string[];
@@ -121,16 +124,44 @@ export interface AgentConfig {
   };
 }
 
+export type SkillSource = "builtin" | "workspace" | "user-global" | "external";
+
+export interface SkillDescriptor {
+  name: string;
+  path: string;
+  source: SkillSource;
+  trusted: boolean;
+  version?: string;
+  allowedTools?: string[];
+  resources?: string[];
+}
+
+function defaultUserId(): string {
+  const configured = env.CLAWBOT_USER_ID?.trim();
+  if (configured) return configured;
+
+  try {
+    return `local:${userInfo().username}`;
+  } catch {
+    return "local:unknown";
+  }
+}
+
 // This function returns the default configuration for an agent, including identity, codebase path, and tool permissions.
 export const defaultAgentConfig = (identity?: {
   sessionId?: string;
   userId?: string;
+  projectId?: string;
 }): AgentConfig => ({
   sessionId: identity?.sessionId ?? randomUUID(),
-  userId: identity?.userId ?? process.env.CLAWBOT_USER_ID ?? "local-user",
+  userId: identity?.userId ??defaultUserId(),
+  projectId:
+    identity?.projectId ??
+    env.CLAWBOT_PROJECT_ID ??
+    createHash("sha256").update(process.cwd()).digest("hex").slice(0, 24),
   //this gives current directory
   codebasePath: process.cwd(),
-  maxFileSizeToRead: 1024 * 1024 ,
+  maxFileSizeToRead: env.MAX_FILE_SIZE,
   //dont read this files
   excludePatterns: [
     'node_modules',

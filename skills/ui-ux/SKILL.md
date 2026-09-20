@@ -1,6 +1,9 @@
 ---
 name: ui-ux-concept-implementation
 description: Implement a selected mockup, screenshot, or visual reference in an existing project and compare the rendered result. Use when visual fidelity drives the work; use dashboard guidance for operational surfaces when it fits better.
+version: 1.0.0
+allowedTools: [read_file, write_file, modify_file, create_folder]
+resources: []
 ---
 
 # UI/UX Concept Implementation

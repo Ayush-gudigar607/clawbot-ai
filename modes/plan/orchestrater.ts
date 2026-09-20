@@ -12,8 +12,14 @@ import { generatePlan } from "./planner.ts";
 import { printPlan,selectSteps } from "./selection.ts";
 import type { Plan, PlanStep } from "./types.ts";
 import { createWebTools } from "./web-tools.ts";
-import { WithMemoryContext } from "../../memory/test-memory.ts";
+import {
+  DURABLE_MEMORY_INSTRUCTIONS,
+  saveDurableMemories,
+  withMemoryContext,
+} from "../../memory/agent-memory.ts";
 import { randomUUID } from "node:crypto";
+import { logger } from "../../src/logger";
+import { env } from "../../src/config/env";
 
 
 function stepPrompt(goal: string, step: PlanStep): string {
@@ -22,7 +28,7 @@ function stepPrompt(goal: string, step: PlanStep): string {
 
 export async function runPlanMode():Promise<void>
 {
-  console.log(chalk.bold("\n Plan Mode\n"));
+  logger.info(chalk.bold("\n Plan Mode\n"));
   
   const goal=await text({
     message:"What is your goal?",
@@ -46,7 +52,7 @@ export async function runPlanMode():Promise<void>
   if(isCancel(proceed) || !proceed) return;
 
   const sessionId=randomUUID();
-  const userId=process.env.CLAWBOT_USER_ID ?? "local-user";
+  const userId=env.CLAWBOT_USER_ID ?? "local-user";
 
   const config=defaultAgentConfig({
     sessionId,
@@ -63,20 +69,28 @@ export async function runPlanMode():Promise<void>
 
   for(const step of selected)
   {
-    console.log(chalk.cyan(`\nExecuting step: ${step.title}\n`));
+    logger.info(chalk.cyan(`\nExecuting step: ${step.title}\n`));
     const agent=new ToolLoopAgent({
     model: getAgentModel() as unknown as LanguageModel,
       stopWhen:stepCountIs(20),
+      instructions: DURABLE_MEMORY_INSTRUCTIONS,
       tools
     })
 
-    const promptText=await WithMemoryContext(stepPrompt(plan.goal,step));
+    const memoryIdentity = {
+      userId,
+      projectId: config.projectId,
+      conversationId: sessionId,
+    };
+    const stepText=stepPrompt(plan.goal,step);
+    const memoryContext=await withMemoryContext(stepText, memoryIdentity);
 
     const r=await agent.generate({
-           prompt:stepPrompt(plan.goal,step)
+           prompt:[memoryContext, stepText].filter(Boolean).join("\n\n")
   })
 
-  if(r.text) return console.log(renderTerminalMarkdown(r.text))
+  if(r.text) logger.info(renderTerminalMarkdown(r.text));
+  await saveDurableMemories(r.text ?? "", memoryIdentity);
 
  
   }
@@ -85,10 +99,9 @@ export async function runPlanMode():Promise<void>
 
   const {errors}=await executor.applyApprovedFromTracker();
    if (errors.length) {
-    console.log(chalk.red('\nSome operations reported errors:\n'));
-    for (const e of errors) console.log(chalk.red(`  • ${e}`));
+    logger.error("Some operations reported errors", { errors });
   } else {
-    console.log(chalk.green('\n✓ Applied.\n'));
+    logger.info(chalk.green('\n✓ Applied.\n'));
   }
   executor.clearStaging();
 }

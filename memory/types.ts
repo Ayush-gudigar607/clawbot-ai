@@ -4,12 +4,16 @@ export interface MemoryContext {
   conversationId: string;
 }
 
-export interface AgentMemory {
-   remember(
-    content:string
-   ):Promise<void>;
+export interface DurableMemory {
+  content: string;
+  reason?: string;
+  confidence?: number;
+}
 
-   recall(
+export interface AgentMemory {
+  rememberMany(candidates: readonly DurableMemory[]): Promise<void>;
+
+  recall(
     query: string,
     limit?: number,
   ): Promise<{
@@ -20,5 +24,4 @@ export interface AgentMemory {
   buildContext(
     query: string,
   ): Promise<string>;
-
 }

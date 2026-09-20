@@ -3,6 +3,7 @@ import { select, isCancel } from "@clack/prompts";
 import { runAgentMode } from "./agents/orchestrater";
 import { runAskMode } from "./ask/orchestrater";
 import { runPlanMode } from "./plan/orchestrater";
+import { logger } from "../src/logger";
 
 //function to run the cli
 export async function runcliMode() {
@@ -45,7 +46,7 @@ export async function runcliMode() {
     //if not agent and mode is not plan as well as ask then return the method is not implemented 
     if(mode!=='agent' && mode!=='plan' && mode!=='ask')
         {
-            console.log(chalk.yellow("\n That mode is not implemented yet.\n"));
+            logger.warn("That mode is not implemented yet");
             // console.log("")
         }
   }

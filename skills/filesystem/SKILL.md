@@ -1,6 +1,9 @@
 ---
 name: filesystem
 description: Safely manage files and folders in the workspace. Supports creating, reading, modifying, deleting, renaming, copying, moving, and listing files and directories while enforcing workspace boundaries, path validation, approval requirements, and safe destructive-operation handling.
+version: 1.0.0
+allowedTools: [read_file, write_file, modify_file, delete_file, create_folder, execute_shell]
+resources: []
 ---
 
 # Filesystem Skill

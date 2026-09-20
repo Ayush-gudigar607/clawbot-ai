@@ -9,6 +9,13 @@ import { createWebTools } from "../modes/plan/web-tools.ts";
 import type { Plan, PlanStep } from "../modes/plan/types.ts";
 import { replyMd } from "./text.ts";
 import { finishOrApprove } from "./approval-session.ts";
+import { env } from "../src/config/env";
+import { ExecutionLimits } from "./execution-limits.ts";
+import {
+  DURABLE_MEMORY_INSTRUCTIONS,
+  saveDurableMemories,
+  withMemoryContext,
+} from "../memory/agent-memory.ts";
 
 function readOnlyConfig(): AgentConfig {
   const c = defaultAgentConfig();
@@ -19,12 +26,39 @@ function readOnlyConfig(): AgentConfig {
   return c;
 }
 
-function agentOptions(config: AgentConfig,maxSteps:number) {
+function agentOptions(config: AgentConfig, limits: ExecutionLimits) {
     return {
         model:getAgentModel(),  
-        stopWhen:stepCountIs(maxSteps),
-        instructions:`Workspace root:${config.codebasePath}`
+        stopWhen: [
+          stepCountIs(env.MAX_AGENT_STEPS),
+          ({ steps }: { steps: Array<{ toolCalls?: unknown[] }> }) =>
+            limits.shouldStop(steps.reduce((total, step) => total + (step.toolCalls?.length ?? 0), 0)),
+        ],
+        instructions:`Workspace root:${config.codebasePath}\n${DURABLE_MEMORY_INSTRUCTIONS}`
     }
+}
+
+async function generateWithinLimits<T, TOptions extends { prompt: string }>(
+  agent: { generate: (options: TOptions) => Promise<T> },
+  prompt: string,
+  limits: ExecutionLimits,
+): Promise<T> {
+  limits.throwIfExceeded();
+  const options = {
+    prompt,
+    abortSignal: limits.signal,
+    onStepFinish: ({ toolCalls }: { toolCalls: unknown[] }) => limits.recordToolCalls(toolCalls.length),
+  } as unknown as TOptions;
+  return agent.generate(options);
+}
+
+async function runWithinTaskLimits<T>(work: (limits: ExecutionLimits) => Promise<T>): Promise<T> {
+  const limits = new ExecutionLimits();
+  try {
+    return await work(limits);
+  } finally {
+    limits.dispose();
+  }
 }
 
 function createReadOnlyTools(executor: ToolExecutor) {
@@ -63,39 +97,57 @@ function createReadOnlyTools(executor: ToolExecutor) {
 }
 
 function extraWebTools(tracker: ActionTracker) {
-  return process.env.FIRECRAWL_API_KEY ? createWebTools(tracker) : {};
+  return env.FIRECRAWL_API_KEY ? createWebTools(tracker) : {};
 }
 
 
-export async function runAsk(ctx:{reply:(t:string , o?:object)=>Promise<unknown>} , question:string){
+export async function runAsk(ctx:{reply:(t:string , o?:object)=>Promise<unknown>} , chatId: number, question:string){
+ return runWithinTaskLimits(async (limits) => {
 
-     const config = readOnlyConfig();
+  const userId = `telegram:${chatId}`;
+  const config = { ...readOnlyConfig(), userId };
     const tracker = new ActionTracker(config.sessionId, config.userId);
   const executor = new ToolExecutor(tracker, config);
   const tools = { ...createReadOnlyTools(executor), ...extraWebTools(tracker) };
   const agent = new ToolLoopAgent({
-    ...agentOptions(config, 20),
+    ...agentOptions(config, limits),
     tools,
   });
 
-  const {text}=await agent.generate({prompt:question});
+  const memoryIdentity = {
+    userId,
+    projectId: config.projectId,
+    conversationId: config.sessionId,
+  };
+  const memoryContext = await withMemoryContext(question, memoryIdentity);
+  const {text}=await generateWithinLimits(agent, [memoryContext, question].filter(Boolean).join("\n\n"), limits);
 
   await replyMd(ctx,text||("No response from agent"));
-
+  await saveDurableMemories(text ?? "", memoryIdentity);
+ });
 }
 
 export async function runAgent(ctx: { reply: (t: string, o?: object) => Promise<unknown> }, chatId: number, goal: string) {
-  const config = defaultAgentConfig();
+ return runWithinTaskLimits(async (limits) => {
+  const config = defaultAgentConfig({ userId: `telegram:${chatId}` });
   const tracker = new ActionTracker(config.sessionId, config.userId);
   const executor = new ToolExecutor(tracker, config);
   const tools = createAgentTools(executor);
   const agent = new ToolLoopAgent({
-    ...agentOptions(config, 40),
+    ...agentOptions(config, limits),
     tools,
   });
-  const { text } = await agent.generate({ prompt: goal });
+  const memoryIdentity = {
+    userId: config.userId,
+    projectId: config.projectId,
+    conversationId: config.sessionId,
+  };
+  const memoryContext = await withMemoryContext(goal, memoryIdentity);
+  const { text } = await generateWithinLimits(agent, [memoryContext, goal].filter(Boolean).join("\n\n"), limits);
   if (text?.trim()) await replyMd(ctx, text.trim());
+  await saveDurableMemories(text ?? "", memoryIdentity);
  await finishOrApprove(ctx, chatId, tracker, executor, ' Done. No file changes were needed.');
+ });
 }
 
 export async function runPlanSteps(
@@ -104,7 +156,8 @@ export async function runPlanSteps(
   plan: Plan,
   steps: PlanStep[],
 ) {
-  const config = defaultAgentConfig();
+ return runWithinTaskLimits(async (limits) => {
+  const config = defaultAgentConfig({ userId: `telegram:${chatId}` });
   const tracker = new ActionTracker(config.sessionId, config.userId);
   const executor = new ToolExecutor(tracker, config);
   const tools = { ...createAgentTools(executor), ...extraWebTools(tracker) };
@@ -113,13 +166,21 @@ export async function runPlanSteps(
     await ctx.reply(`🔧 Executing: *${step.title}*`, { parse_mode: 'Markdown' });
     const prompt = [`Goal: ${plan.goal}`, `Step: ${step.title}`, step.description].join('\n');
     const agent = new ToolLoopAgent({
-      ...agentOptions(config, 30),
+      ...agentOptions(config, limits),
       tools,
     });
-    const { text } = await agent.generate({ prompt });
+    const memoryIdentity = {
+      userId: config.userId,
+      projectId: config.projectId,
+      conversationId: config.sessionId,
+    };
+    const memoryContext = await withMemoryContext(prompt, memoryIdentity);
+    const { text } = await generateWithinLimits(agent, [memoryContext, prompt].filter(Boolean).join("\n\n"), limits);
     if (text?.trim()) await replyMd(ctx, text.trim());
+    await saveDurableMemories(text ?? "", memoryIdentity);
   }
 
 //THIS WILL CALL THE FINISH-RUN FUNCTION
  await finishOrApprove(ctx, chatId, tracker, executor, ' All steps done. No file changes needed.');
+ });
 }

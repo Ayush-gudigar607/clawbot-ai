@@ -1,12 +1,13 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { env } from "../src/config/env";
 
 export function getAgentModel() {
-  const provider = process.env.AI_PROVIDER ?? "openrouter";
+  const provider = env.AI_PROVIDER;
 
   switch (provider) {
     case "openrouter": {
-      const apiKey = process.env.OPENROUTER_API_KEY;
+      const apiKey = env.OPENROUTER_API_KEY;
 
       if (!apiKey) {
         throw new Error(
@@ -19,7 +20,7 @@ export function getAgentModel() {
       });
 
       const modelId =
-        process.env.OPENROUTER_DEFAULT_MODEL;
+        env.OPENROUTER_DEFAULT_MODEL;
 
       if (!modelId) {
         throw new Error(
@@ -31,7 +32,7 @@ export function getAgentModel() {
     }
 
     case "gemini": {
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = env.GEMINI_API_KEY;
 
       if (!apiKey) {
         throw new Error(
@@ -44,7 +45,7 @@ export function getAgentModel() {
       });
 
       const modelId =
-        process.env.GEMINI_DEFAULT_MODEL ??
+        env.GEMINI_DEFAULT_MODEL ??
         "gemini-2.5-flash";
 
       return google(modelId);

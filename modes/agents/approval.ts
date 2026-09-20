@@ -4,6 +4,7 @@ import type { ActionTracker } from "./action-tracker.ts";
 import type { ActionLog } from "./types.ts";
 import { composeBeforeAfter, formatPatch } from "./diff-view.ts";
 import { renderTerminalMarkdown } from "../../terminalui/terminal-md.ts";
+import { logger } from "../../src/logger";
 
 interface ReviewGroup {
   label: string;
@@ -69,7 +70,7 @@ export async function runApprovalFlow(
   const pending = tracker.getPendingMutations();
 
   if (pending.length === 0) {
-    console.log(
+    logger.info(
       chalk.dim("\nNo staged file, folder, or shell changes to review.\n"),
     );
     return false;
@@ -112,7 +113,7 @@ export async function runApprovalFlow(
 
       if (opt === "diff") {
         if (g.patch) {
-          console.log(
+          logger.info(
             "\n" +
               renderTerminalMarkdown("```diff\n" + g.patch + "\n```\n") +
               "\n",

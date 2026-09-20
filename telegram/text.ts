@@ -1,8 +1,11 @@
+import { logger } from "../src/logger";
+import { withTelegramRetry } from "./hardening";
+
 export const clip = (text: string, max = 4000) =>
   text.length <= max ? text : text.slice(0, max) + '\n…[truncated]';
 
 export const replyMd = (ctx: { reply: (t: string, o?: object) => Promise<unknown> }, text: string) =>
-  ctx.reply(clip(text), { parse_mode: 'Markdown' });
+  withTelegramRetry("replyMarkdown", () => ctx.reply(clip(text), { parse_mode: 'Markdown' }));
 
 export function agentErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -21,14 +24,18 @@ export async function reportAgentError(
 ) {
   const userMessage = agentErrorMessage(error);
   if (userMessage.startsWith('⚠️ The AI provider daily free-model quota')) {
-    console.error(`${operation} failed: ${userMessage}`);
+    logger.error(`${operation} failed`, { error: userMessage });
   } else {
-    console.error(`${operation} failed:`, error);
+    logger.error(`${operation} failed`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
   try {
     await ctx.reply(userMessage);
   } catch (replyError) {
-    console.error('Failed to report AI error to Telegram:', replyError);
+    logger.error("Failed to report AI error to Telegram", {
+      error: replyError instanceof Error ? replyError.message : String(replyError),
+    });
   }
 }
 

@@ -1,40 +1,64 @@
 import {Telegraf} from "telegraf";
-import chalk from "chalk";
 import { WELCOME } from "./constant.ts";
 import { registerHandlers } from "./handler.ts";
+import { env } from "../src/config/env";
+import { logger } from "../src/logger";
+import { withTelegramRetry } from "./hardening";
+import { clearExpiredApprovalSessions } from "./approval-session";
+import { clearExpiredPlanSessions } from "./plan-session";
 
 export async function runTelegramBot() {
-   const token=process.env.TELEGRAM_BOT_TOKEN;
-   const ownerId=process.env.TELEGRAM_OWNER_ID;
+   const token=env.TELEGRAM_BOT_TOKEN;
+   const ownerId=env.TELEGRAM_OWNER_ID;
    if(!token) {
-      console.log(chalk.red("TELEGRAM_BOT_TOKEN is not set in .env file"));
+      logger.error("Telegram bot token is not configured");
       return;
    }
 
    if(!ownerId) {
-      console.log(chalk.red("TELEGRAM_OWNER_ID is not set in .env file"));
+      logger.error("Telegram owner ID is not configured");
       return;
    }
 
    const bot = new Telegraf(token!);
    registerHandlers(bot)
    bot.catch((err, ctx) => {
-      console.error(`Telegram update ${ctx.update.update_id} failed:`, err);
+         logger.error("Telegram update failed", {
+            updateId: ctx.update.update_id,
+            error: err instanceof Error ? err.message : String(err),
+         });
    });
 
-   await bot.telegram.sendMessage(ownerId!, WELCOME, {parse_mode: "Markdown"});
+    await withTelegramRetry("sendWelcomeMessage", () =>
+       bot.telegram.sendMessage(ownerId, WELCOME, { parse_mode: "Markdown" }),
+    );
 
-   console.log(chalk.green("Sent Welcome message to Telegram.\n"));
+   logger.info("Sent welcome message to Telegram");
 
-   bot.launch().then(() => {
-      console.log(chalk.green("Telegram bot is running..."));
-   }).catch((err) => {
-      console.log(chalk.red("Failed to launch Telegram bot:", err));
-   });
+   try {
+     await withTelegramRetry("launchBot", () => bot.launch());
+     logger.info("Telegram bot is running");
+   } catch (err) {
+     logger.error("Failed to launch Telegram bot", {
+       error: err instanceof Error ? err.message : String(err),
+     });
+     return;
+   }
+
+   const cleanupTimer = setInterval(() => {
+     clearExpiredApprovalSessions();
+     clearExpiredPlanSessions();
+   }, 60_000);
+   cleanupTimer.unref();
 
    await new Promise<void>((resolve) => {
+      let stopped = false;
       const stop = () => {
+         if (stopped) return;
+         stopped = true;
+         clearInterval(cleanupTimer);
          bot.stop();
+         logger.info("Telegram bot stopped");
          resolve();
       };
       process.once("SIGINT", stop);

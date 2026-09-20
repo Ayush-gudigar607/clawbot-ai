@@ -1,13 +1,14 @@
 import type { ActionLog, ActionStatus } from "./types";
 import { isMutationType } from "./types";
 import { randomUUID } from "node:crypto";
+import { env } from "../../src/config/env";
 
 export class ActionTracker {
   private actions: ActionLog[] = [];
 
   constructor(
     private readonly sessionId: string = randomUUID(),
-    private readonly userId: string = process.env.CLAWBOT_USER_ID ?? "local-user",
+    private readonly userId: string = env.CLAWBOT_USER_ID ?? "local-user",
   ) {}
 
   log(
@@ -47,6 +48,16 @@ export class ActionTracker {
 
   getActions():readonly ActionLog[] {
     return this.actions;
+  }
+
+  restore(actions: readonly ActionLog[]): void {
+    this.actions = actions.map((action) => ({
+      ...action,
+      timestamp: new Date(action.timestamp),
+      approvedAt: action.approvedAt ? new Date(action.approvedAt) : undefined,
+      appliedAt: action.appliedAt ? new Date(action.appliedAt) : undefined,
+      details: { ...action.details },
+    }));
   }
 
   getPendingMutations(): readonly ActionLog[] {

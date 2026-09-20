@@ -1,13 +1,71 @@
 import { Markup } from 'telegraf';
 import type { Plan } from '../modes/plan/types';
+import { env } from '../src/config/env';
+import { withTelegramRetry } from './hardening';
+import {
+  clearExpiredPersistentSessions,
+  deletePlanSession,
+  readPlanSession,
+  writePlanSession,
+} from './persistent-sessions';
 
 
 export interface PlanSession {
   plan: Plan;
   selected: Set<string>;
+  expiresAt: number;
 }
 
 export const planSessions = new Map<number, PlanSession>();
+
+export function removePlanSession(chatId: number): void {
+  planSessions.delete(chatId);
+  deletePlanSession(chatId);
+}
+
+export function getPlanSession(chatId: number): PlanSession | undefined {
+  const session = planSessions.get(chatId);
+  if (!session) {
+    const persisted = readPlanSession(chatId);
+    if (!persisted) return undefined;
+    const restored: PlanSession = {
+      plan: persisted.plan,
+      selected: new Set(persisted.selected),
+      expiresAt: persisted.expiresAt,
+    };
+    planSessions.set(chatId, restored);
+  }
+  const active = planSessions.get(chatId)!;
+  if (active.expiresAt <= Date.now()) {
+    planSessions.delete(chatId);
+    deletePlanSession(chatId);
+    return undefined;
+  }
+  return active;
+}
+
+export function storePlanSession(chatId: number, session: Omit<PlanSession, 'expiresAt'>): void {
+  planSessions.set(chatId, {
+    ...session,
+    expiresAt: Date.now() + env.TELEGRAM_SESSION_TTL_MS,
+  });
+  const stored = planSessions.get(chatId)!;
+  writePlanSession(chatId, {
+    plan: stored.plan,
+    selected: [...stored.selected],
+    expiresAt: stored.expiresAt,
+  });
+}
+
+export function clearExpiredPlanSessions(): void {
+  for (const [chatId, session] of planSessions) {
+    if (session.expiresAt <= Date.now()) {
+      planSessions.delete(chatId);
+      deletePlanSession(chatId);
+    }
+  }
+  clearExpiredPersistentSessions();
+}
 
 export function planMessage(session: PlanSession): string {
   const lines = session.plan.steps.map((step, i) => {
@@ -45,8 +103,10 @@ export async function refreshPlanUi(
   ctx: { editMessageText: (t: string, o: object) => Promise<unknown> },
   s: PlanSession,
 ) {
-  await ctx.editMessageText(planMessage(s), {
-    parse_mode: 'Markdown',
-    reply_markup: planKeyboard(s).reply_markup,
-  });
+  await withTelegramRetry("editPlanMessage", () =>
+    ctx.editMessageText(planMessage(s), {
+      parse_mode: 'Markdown',
+      reply_markup: planKeyboard(s).reply_markup,
+    }),
+  );
 }

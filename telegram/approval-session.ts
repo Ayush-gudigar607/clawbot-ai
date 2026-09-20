@@ -1,17 +1,68 @@
 import { Markup } from 'telegraf';
-import type { ActionTracker } from '../modes/agents/action-tracker.ts';
-import type { ToolExecutor } from '../modes/agents/tool-executor.ts';
+import { ActionTracker } from '../modes/agents/action-tracker.ts';
+import { ToolExecutor } from '../modes/agents/tool-executor.ts';
 import type { ActionLog } from '../modes/agents/types.ts';
 import { composeBeforeAfter, formatPatch } from '../modes/agents/diff-view.ts';
 import { clip } from './text.ts';
+import { withTelegramRetry } from './hardening';
+import { env } from '../src/config/env';
+import { defaultAgentConfig } from '../modes/agents/types.ts';
+import {
+  deleteApprovalSession,
+  readApprovalSession,
+  writeApprovalSession,
+} from './persistent-sessions';
 
 export interface ApprovalSession {
   tracker: ActionTracker;
   executor: ToolExecutor;
   pending: readonly ActionLog[];
+  expiresAt: number;
 }
 
 export const approvalSessions = new Map<number, ApprovalSession>();
+
+export function removeApprovalSession(chatId: number): void {
+  approvalSessions.delete(chatId);
+  deleteApprovalSession(chatId);
+}
+
+export function getApprovalSession(chatId: number): ApprovalSession | undefined {
+  const session = approvalSessions.get(chatId);
+  if (!session) {
+    const persisted = readApprovalSession(chatId);
+    if (!persisted || persisted.pending.length === 0) return undefined;
+    const first = persisted.pending[0]!;
+    const tracker = new ActionTracker(first.sessionId, first.userId);
+    tracker.restore(persisted.pending);
+    const executor = new ToolExecutor(
+      tracker,
+      defaultAgentConfig({ sessionId: first.sessionId, userId: first.userId }),
+    );
+    approvalSessions.set(chatId, {
+      tracker,
+      executor,
+      pending: tracker.getPendingMutations(),
+      expiresAt: persisted.expiresAt,
+    });
+  }
+  const active = approvalSessions.get(chatId)!;
+  if (active.expiresAt <= Date.now()) {
+    approvalSessions.delete(chatId);
+    deleteApprovalSession(chatId);
+    return undefined;
+  }
+  return active;
+}
+
+export function clearExpiredApprovalSessions(): void {
+  for (const [chatId, session] of approvalSessions) {
+    if (session.expiresAt <= Date.now()) {
+      approvalSessions.delete(chatId);
+      deleteApprovalSession(chatId);
+    }
+  }
+}
 
 function groupPending(pending: readonly ActionLog[]) {
   const files = new Map<string, ActionLog[]>();
@@ -53,16 +104,23 @@ async function promptApproval(
   chatId: number,
   session: ApprovalSession,
 ) {
-  approvalSessions.set(chatId, session);
-  await ctx.reply(approvalSummary(session.pending), {
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback('📋 Show Diff', 'approval_diff')],
-      [
-        Markup.button.callback('✅ Accept All', 'approval_accept'),
-        Markup.button.callback('❌ Reject All', 'approval_reject'),
-      ],
-    ]),
-  });
+  const storedSession = {
+    ...session,
+    expiresAt: Date.now() + env.TELEGRAM_APPROVAL_TTL_MS,
+  };
+  approvalSessions.set(chatId, storedSession);
+  writeApprovalSession(chatId, storedSession);
+  await withTelegramRetry("replyApproval", () =>
+    ctx.reply(approvalSummary(session.pending), {
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('📋 Show Diff', 'approval_diff')],
+        [
+          Markup.button.callback('✅ Accept All', 'approval_accept'),
+          Markup.button.callback('❌ Reject All', 'approval_reject'),
+        ],
+      ]),
+    }),
+  );
 }
 
 export async function finishOrApprove(
@@ -77,5 +135,5 @@ export async function finishOrApprove(
     await ctx.reply(noChangesMsg);
     return;
   }
-  await promptApproval(ctx, chatId, { tracker, executor, pending });
+  await promptApproval(ctx, chatId, { tracker, executor, pending, expiresAt: 0 });
 }

@@ -9,8 +9,14 @@ import { defaultAgentConfig } from "../agents/types";
 import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
 import { runApprovalFlow } from "../agents/approval";
 import { createWebTools } from "../plan/web-tools";
-import { WithMemoryContext } from "../../memory/test-memory";
+import {
+  DURABLE_MEMORY_INSTRUCTIONS,
+  saveDurableMemories,
+  withMemoryContext,
+} from "../../memory/agent-memory";
 import { randomUUID } from "node:crypto";
+import { logger } from "../../src/logger";
+import { env } from "../../src/config/env";
 
 function createAskTools(executor: ToolExecutor) {
   return {
@@ -104,7 +110,7 @@ function asMd(question: string, answer: string): string {
 
 export async function runAskMode()
 {
-    console.log(chalk.bold("\n Ask Mode\n"))
+    logger.info(chalk.bold("\n Ask Mode\n"))
 
     const question=await text({
         message:"What do you want to ask the agent?"
@@ -113,7 +119,7 @@ export async function runAskMode()
     if(isCancel(question) || !question.trim()) return
 
     const sessionId = randomUUID();
-    const userId = process.env.CLAWBOT_USER_ID ?? "local-user";
+    const userId = env.CLAWBOT_USER_ID ?? "local-user";
 
     const config=defaultAgentConfig({
 sessionId,
@@ -137,20 +143,26 @@ userId
     const agent=new ToolLoopAgent({
     model: getAgentModel() as unknown as LanguageModel,
         stopWhen:stepCountIs(20),
-        instructions: "For a task covered by a skill, call search_skills, read the selected SKILL.md, and call list_skill_resources. Read only resources explicitly referenced by the skill or needed to answer the request.",
+        instructions: `For a task covered by a skill, call search_skills, read the selected SKILL.md, and call list_skill_resources. Read only resources explicitly referenced by the skill or needed to answer the request. ${DURABLE_MEMORY_INSTRUCTIONS}`,
         tools
     })
 
 
-    const promptText=await WithMemoryContext(question.trim());
+    const memoryIdentity = {
+      userId,
+      projectId: config.projectId,
+      conversationId: sessionId,
+    };
+    const memoryContext=await withMemoryContext(question.trim(), memoryIdentity);
     
     const result=await agent.generate({
-        prompt:question.trim()
+        prompt:[memoryContext, question.trim()].filter(Boolean).join("\n\n")
 
     })
 
     const answer=result.text?.trim() || "(no answer)"
-    console.log("\n"+renderTerminalMarkdown(answer)+"\n")
+    logger.info("\n"+renderTerminalMarkdown(answer)+"\n")
+    await saveDurableMemories(result.text ?? "", memoryIdentity);
 
     const wantSave=await confirm({
         message:"save the answer to a .md file in the current directory? ",

@@ -1,6 +1,9 @@
 ---
 name: docker-local-dev
 description: Create or repair local Docker Compose services, Dockerfiles, mounts, networking, and readiness checks. Use when container configuration is the deliverable; ordinary container commands and production deployment are separate concerns.
+version: 1.0.0
+allowedTools: [read_file, write_file, modify_file, create_folder, execute_shell]
+resources: []
 ---
 
 # Docker Local Development

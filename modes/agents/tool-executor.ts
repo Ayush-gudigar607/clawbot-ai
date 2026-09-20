@@ -1,9 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
+import { env } from "../../src/config/env";
 
 import { ActionTracker } from "./action-tracker";
-import type { ActionLog, AgentConfig } from "./types";
+import type {
+  ActionLog,
+  AgentConfig,
+  SkillDescriptor,
+  SkillSource,
+} from "./types";
 
 import {
   checkCommandPolicy,
@@ -13,6 +19,7 @@ import {
   executeSandboxed,
 } from "../../security/sandbox";
 import { randomUUID } from "node:crypto";
+import { parseSkillFrontmatter, type SkillFrontmatter } from "../../skills/skill-validation";
 
 export interface ToolResult {
   success: boolean;
@@ -25,11 +32,6 @@ interface SearchOptions {
   includeExtensions?: string[];
 }
 
-interface SkillInfo {
-  name: string;
-  path: string;
-}
-
 export class ToolExecutor {
   /**
    * Files created/modified by the agent but not yet committed.
@@ -40,6 +42,7 @@ export class ToolExecutor {
    * Files deleted by the agent but not yet committed.
    */
   private readonly deleted = new Set<string>();
+  private activeSkill: SkillDescriptor | undefined;
 
   /**
    * Normalize workspace-relative paths.
@@ -53,6 +56,23 @@ export class ToolExecutor {
     private readonly tracker: ActionTracker,
     private readonly config: AgentConfig,
   ) {}
+
+  private assertTrustedSkillForDangerousOperation(toolName: string): void {
+    if (this.activeSkill && !this.activeSkill.trusted) {
+      throw new Error(
+        `Untrusted skill '${this.activeSkill.name}' cannot authorize shell or filesystem mutations`,
+      );
+    }
+    if (
+      this.activeSkill &&
+      this.activeSkill.allowedTools &&
+      !this.activeSkill.allowedTools.includes(toolName)
+    ) {
+      throw new Error(
+        `Skill '${this.activeSkill.name}' is not allowed to use '${toolName}'`,
+      );
+    }
+  }
 
   // ============================================================
   // PATH SECURITY
@@ -366,6 +386,11 @@ export class ToolExecutor {
         `Not a file: ${abs}`,
       );
     }
+    if (stat.size > this.config.maxFileSizeToRead) {
+      throw new Error(
+        `File exceeds maximum readable size (${this.config.maxFileSizeToRead} bytes): ${abs}`,
+      );
+    }
   }
 
   private async assertDirectory(
@@ -463,6 +488,7 @@ export class ToolExecutor {
     rel: string,
     content: string,
   ): Promise<string> {
+    this.assertTrustedSkillForDangerousOperation("write_file");
     if (!this.config.tools.allowFileCreation) {
       throw new Error("File creation disabled");
     }
@@ -510,6 +536,7 @@ export class ToolExecutor {
     rel: string,
     content: string,
   ): Promise<string> {
+    this.assertTrustedSkillForDangerousOperation("modify_file");
     if (!this.config.tools.allowFileModification) {
       throw new Error("File modification disabled");
     }
@@ -557,6 +584,7 @@ export class ToolExecutor {
   async deleteFile(
     rel: string,
   ): Promise<string> {
+    this.assertTrustedSkillForDangerousOperation("delete_file");
     if (!this.config.tools.allowFileModification) {
       throw new Error("File modification disabled");
     }
@@ -597,6 +625,7 @@ export class ToolExecutor {
   async createFolder(
     rel: string,
   ): Promise<string> {
+    this.assertTrustedSkillForDangerousOperation("create_folder");
     if (!this.config.tools.allowFolderCreation) {
       throw new Error("Folder creation disabled");
     }
@@ -634,6 +663,7 @@ export class ToolExecutor {
   async deleteFolder(
     rel: string,
   ): Promise<string> {
+    this.assertTrustedSkillForDangerousOperation("delete_folder");
     const normalized = this.norm(rel);
 
     this.assertNotProtected(normalized);
@@ -911,6 +941,7 @@ export class ToolExecutor {
   async queueShell(
     command: string,
   ): Promise<string> {
+    this.assertTrustedSkillForDangerousOperation("execute_shell");
     const policy =
       checkCommandPolicy(command);
 
@@ -1323,12 +1354,18 @@ export class ToolExecutor {
 
   private skillRoots(): string[] {
     return [
+      ...(env.BUILTIN_SKILLS_DIRS?.split(";")
+        .map((item) => item.trim())
+        .filter(Boolean) ?? []),
+
+      path.join(this.config.codebasePath, "builtin-skills"),
+
       path.join(
         this.config.codebasePath,
         "skills",
       ),
 
-      ...(process.env.SKILLS_DIRS?.split(";")
+      ...(env.SKILLS_DIRS?.split(";")
         .map((item) => item.trim())
         .filter(Boolean) ?? []),
 
@@ -1346,8 +1383,51 @@ export class ToolExecutor {
     ];
   }
 
+  private skillRootInfo(root: string): { source: SkillSource; trusted: boolean } {
+    const resolvedRoot = path.resolve(root);
+    const builtinRoots = [
+      ...(env.BUILTIN_SKILLS_DIRS?.split(";") ?? []),
+      path.join(this.config.codebasePath, "builtin-skills"),
+    ]
+      .map((item) => path.resolve(item.trim()))
+      .filter(Boolean);
+    if (builtinRoots.some((item) => item === resolvedRoot)) {
+      return { source: "builtin", trusted: true };
+    }
+
+    if (resolvedRoot === path.resolve(this.config.codebasePath, "skills")) {
+      return { source: "workspace", trusted: true };
+    }
+
+    const globalRoots = [
+      path.join(homedir(), ".cursor", "skills"),
+      path.join(homedir(), ".claude", "skills"),
+    ].map((item) => path.resolve(item));
+    if (globalRoots.includes(resolvedRoot)) {
+      return { source: "user-global", trusted: false };
+    }
+
+    return { source: "external", trusted: false };
+  }
+
+  private descriptorForSkill(
+    root: string,
+    skillFile: string,
+    frontmatter?: SkillFrontmatter,
+  ): SkillDescriptor {
+    const metadata = this.skillRootInfo(root);
+    return {
+      name: frontmatter?.name ?? path.basename(path.dirname(skillFile)),
+      path: skillFile,
+      ...metadata,
+      version: frontmatter?.version,
+      allowedTools: frontmatter?.allowedTools,
+      resources: frontmatter?.resources,
+    };
+  }
+
   async listSkills(): Promise<string> {
-    const skills: string[] = [];
+    const skills: SkillDescriptor[] = [];
 
     for (const root of this.skillRoots()) {
       if (!(await this.pathExists(root))) {
@@ -1360,14 +1440,24 @@ export class ToolExecutor {
           if (entry.isSymbolicLink()) continue;
           const target = path.join(current, entry.name);
           if (entry.isDirectory()) await walk(target);
-          else if (entry.isFile() && entry.name === "SKILL.md") skills.push(target);
+          else if (entry.isFile() && entry.name === "SKILL.md") {
+            try {
+              const content = await fs.promises.readFile(target, "utf8");
+              const frontmatter = parseSkillFrontmatter(content);
+              skills.push(this.descriptorForSkill(root, target, frontmatter));
+            } catch {
+              // Invalid skills are not discoverable or loadable.
+            }
+          }
         }
       };
 
       try { await walk(root); } catch { continue; }
     }
 
-    return skills.sort().join("\n") || "(none)";
+    return skills.sort((a, b) => a.path.localeCompare(b.path)).map((skill) =>
+      JSON.stringify(skill),
+    ).join("\n") || "(none)";
   }
 
   private async isInsideSkillRoot(
@@ -1422,7 +1512,15 @@ export class ToolExecutor {
       );
     }
 
-    return fs.promises.readFile(skillFile, "utf8");
+    const root = this.skillRoots().find((candidate) => {
+      const relative = path.relative(path.resolve(candidate), skillFile);
+      return !relative.startsWith("..") && !path.isAbsolute(relative);
+    });
+    if (!root) throw new Error("Skill path is not under a configured skill root");
+    const content = await fs.promises.readFile(skillFile, "utf8");
+    const frontmatter = parseSkillFrontmatter(content);
+    this.activeSkill = this.descriptorForSkill(root, skillFile, frontmatter);
+    return content;
   }
 
   async listSkillResources(skillPath: string): Promise<string> {
@@ -1485,11 +1583,21 @@ export class ToolExecutor {
   async searchSkills(query: string): Promise<string> {
     const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (terms.length === 0) throw new Error("search_skills: query is required");
-    const paths = (await this.listSkills()).split("\n").filter((item) => item !== "(none)");
+    const paths = (await this.listSkills())
+      .split("\n")
+      .filter((item) => item !== "(none)")
+      .map((item) => JSON.parse(item) as SkillDescriptor);
     const matches: string[] = [];
-    for (const skillFile of paths) {
-      const content = await fs.promises.readFile(skillFile, "utf8");
-      if (terms.every((term) => content.toLowerCase().includes(term))) matches.push(skillFile);
+    for (const skill of paths) {
+      const content = await fs.promises.readFile(skill.path, "utf8");
+      try {
+        parseSkillFrontmatter(content);
+      } catch {
+        continue;
+      }
+      if (terms.every((term) => content.toLowerCase().includes(term))) {
+        matches.push(JSON.stringify(skill));
+      }
     }
     return matches.sort().join("\n") || "(no matches)";
   }
