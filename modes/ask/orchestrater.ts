@@ -9,6 +9,7 @@ import { defaultAgentConfig } from "../agents/types";
 import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
 import { runApprovalFlow } from "../agents/approval";
 import { createWebTools } from "../plan/web-tools";
+import { WithMemoryContext } from "../../memory/test-memory";
 
 function createAskTools(executor: ToolExecutor) {
   return {
@@ -133,6 +134,9 @@ export async function runAskMode()
         tools
     })
 
+
+    const promptText=await WithMemoryContext(question.trim());
+    
     const result=await agent.generate({
         prompt:question.trim()
 

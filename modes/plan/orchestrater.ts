@@ -12,6 +12,7 @@ import { generatePlan } from "./planner.ts";
 import { printPlan,selectSteps } from "./selection.ts";
 import type { Plan, PlanStep } from "./types.ts";
 import { createWebTools } from "./web-tools.ts";
+import { WithMemoryContext } from "../../memory/test-memory.ts";
 
 
 function stepPrompt(goal: string, step: PlanStep): string {
@@ -59,10 +60,10 @@ export async function runPlanMode():Promise<void>
       tools
     })
 
+    const promptText=await WithMemoryContext(stepPrompt(plan.goal,step));
+
     const r=await agent.generate({
            prompt:stepPrompt(plan.goal,step)
-
-    
   })
 
   if(r.text) return console.log(renderTerminalMarkdown(r.text))

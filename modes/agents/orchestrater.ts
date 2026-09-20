@@ -8,6 +8,7 @@ import { getAgentModel } from "../../ai";
 import chalk from "chalk";
 import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
 import { runApprovalFlow } from "./approval";
+import {WithMemoryContext} from "../../memory/test-memory";
 
 export async function runAgentMode() {
   console.log(chalk.bold("Starting Clawbot AI in Agent mode..."));
@@ -37,6 +38,8 @@ export async function runAgentMode() {
     ].join("\n"),
     tools,
   });
+
+  const promptText=await WithMemoryContext(goal.trim());
 
   try {
     const result = await agent.generate({
