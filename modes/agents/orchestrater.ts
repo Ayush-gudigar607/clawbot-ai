@@ -9,6 +9,7 @@ import chalk from "chalk";
 import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
 import { runApprovalFlow } from "./approval";
 import {WithMemoryContext} from "../../memory/test-memory";
+import { randomUUID } from "node:crypto";
 
 export async function runAgentMode() {
   console.log(chalk.bold("Starting Clawbot AI in Agent mode..."));
@@ -18,12 +19,20 @@ export async function runAgentMode() {
     placeholder: "Concreate task for this codebase...",
   });
 
-  if (isCancel(goal) || !goal.trim()) {
+    if (isCancel(goal) || !goal.trim()) {
     return;
-  } 
+  }
 
-  const config = defaultAgentConfig();
-  const tracker = new ActionTracker();
+  const sessionId = randomUUID();
+
+  const userId =
+    process.env.CLAWBOT_USER_ID ?? "local-user";
+
+  const config = defaultAgentConfig({
+    sessionId,
+    userId,
+  });
+  const tracker = new ActionTracker(sessionId, userId);
   const executor = new ToolExecutor(tracker, config);
   const tools = createAgentTools(executor);
 
@@ -66,7 +75,7 @@ export async function runAgentMode() {
          return executor.clearStaging();
     }
 
-    const {errors}=executor.applyApprovedFromTracker();
+    const {errors}=await executor.applyApprovedFromTracker();
 
     if(errors.length>0){
      console.log(chalk.red("Some approved changes failed:"));
