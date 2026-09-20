@@ -10,6 +10,12 @@ import {AgentMemory} from "../memory/memory-context";
     })
 
     const memoryContext=await memory.buildContext(input);
+    console.log("Memory context:",memoryContext);
+
+    await memory.remember(input);
+
+    console.log("Memory saved");
+    console.log("Memory context:", memoryContext);
 
     return [
         memoryContext ? `Relavant Memory\n${memoryContext}\n\n` : "",

@@ -1,0 +1,473 @@
+/* ============================================================
+   Login Page – Professional UI / CSS
+   Built with frontend-design, frontend-developer, frontend-security-coder
+   ============================================================ */
+
+/* --- Design Tokens (customizable) --- */
+:root {
+  /* Primary palette – deep, professional tones */
+  --color-primary: #1a1a2e;
+  --color-primary-light: #16213e;
+  --color-primary-accent: #0f3460;
+  --color-secondary: #e94560;
+  --color-success: #00cc96;
+  --color-error: #ff4757;
+  --color-warning: #ffa502;
+
+  /* Backgrounds */
+  --bg-primary: #f5f7fa;
+  --bg-card: #ffffff;
+  --bg-input: #f8f9fc;
+  --bg-hover: #eef0f5;
+
+  /* Text */
+  --text-main: #1a1a2e;
+  --text-secondary: #555555;
+  --text-muted: #888888;
+
+  /* Borders & Shadows */
+  --border-color: #e0e0e0;
+  --border-radius: 8px;
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-smooth: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* --- Reset & Base --- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-main);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* --- Layout --- */
+.page-wrapper {
+  max-width: 640px;
+  margin: 48px auto;
+  padding: 0 24px;
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--bg-card);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  padding: 20px 24px 0;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-primary);
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.logo-mark {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Main Content --- */
+.main-content {
+  background: var(--bg-card);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-card);
+  padding: 40px 28px;
+}
+
+.login-container {
+  background: var(--bg-card);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-card);
+  padding: 44px 28px;
+}
+
+.login-card {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+}
+
+.login-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-top: 6px;
+}
+
+/* --- Form --- */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+
+.form-label-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.form-label {
+  font-size: 0.875rem;
+}
+
+.forgot-link {
+  color: var(--color-primary-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.forgot-link:hover {
+  text-decoration: underline;
+}
+
+.input-wrapper {
+  position: relative;
+  margin-bottom: 4px;
+}
+
+.input-icon {
+  position: absolute;
+  left: 14px;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  background: var(--bg-input);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--border-radius);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.form-input:focus {
+  border-color: var(--color-primary-accent);
+  box-shadow: 0 0 0 3px rgba(15, 52, 96, 0.15);
+}
+
+.form-input.error {
+  border-color: var(--color-error);
+}
+
+.form-error {
+  display: none;
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: var(--color-error);
+  min-height: 1.2em;
+}
+
+.form-error.visible {
+  display: block;
+}
+
+/* Password toggle */
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+}
+
+.password-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.password-toggle[aria-pressed="true"] {
+  color: var(--color-primary-accent);
+}
+
+/* --- Buttons --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 28px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn--primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.btn--primary:hover {
+  background: var(--color-primary-light);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 26, 46, 0.2);
+}
+
+.btn--primary:active {
+  transform: translateY(0);
+}
+
+.btn--full {
+  width: 100%;
+}
+
+.btn--loading {
+  pointer-events: none;
+}
+
+/* --- Divider --- */
+.login-divider {
+  margin: 28px 0;
+  padding-left: 20px;
+  text-align: center;
+}
+
+.login-divider span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* --- Social Buttons --- */
+.social-login {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.btn--social {
+  flex: 1;
+  padding: 12px 16px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--bg-card);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn--social:hover {
+  border-color: var(--color-primary-accent);
+  color: var(--color-primary-accent);
+  box-shadow: 0 2px 8px rgba(15, 52, 96, 0.15);
+}
+
+.btn--social:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.social-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  transition: transform var(--transition-fast);
+}
+
+.social-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* --- Illustration --- */
+.login-illustration {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+}
+
+.login-illustration h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.login-illustration p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.feature-list {
+  list-style: none;
+  margin: 16px 0 8px;
+}
+
+.feature-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  font-size: 0.88rem;
+}
+
+.feature-list svg {
+  color: var(--color-primary-accent);
+  flex-shrink: 0;
+}
+
+/* --- Footer --- */
+.site-footer {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+}
+
+.footer-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.copyright {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.footer-nav {
+  display: flex;
+  gap: 20px;
+}
+
+.footer-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: color var(--transition-fast);
+}
+
+.footer-link:hover {
+  color: var(--color-primary-accent);
+}
+
+/* --- Toast Notifications (Security) --- */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  padding: 14px 20px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  animation: slideIn 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toast.success {
+  background: #00cc96;
+  color: #fff;
+}
+
+.toast.error {
+  background: var(--color-error);
+  color: #fff;
+}
+
+.toast.info {
+  background: #e0e0e0;
+  color: #333;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* --- Responsive --- */
+@media (max-width: 480px) {
+  .page-wrapper {
+    padding: 20px 12px;
+  }
+
+  .login-card {
+    padding: 32px 20px;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .login-illustration {
+    padding-top: 20px;
+    margin-top: 24px;
+  }
+}
