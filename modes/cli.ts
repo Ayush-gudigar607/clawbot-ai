@@ -13,6 +13,7 @@ export async function runcliMode() {
         { value: "agent", label: "Agent Mode" },
         { value: "plan", label: "Plan Mode" },
         { value: "ask", label: "Ask Mode" },
+        {value:"mcp",label:"MCP Mode"},
         { value: "Back", label: "Back to main menu" },
       ],
     });
@@ -23,6 +24,7 @@ export async function runcliMode() {
     }
 
     if(mode=="agent")
+        
     {
         //call the agent mode 
         await runAgentMode();
@@ -44,6 +46,7 @@ export async function runcliMode() {
     if(mode!=='agent' && mode!=='plan' && mode!=='ask')
         {
             console.log(chalk.yellow("\n That mode is not implemented yet.\n"));
+            // console.log("")
         }
   }
 }

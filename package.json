@@ -1,17 +1,63 @@
 {
   "name": "clawbot-ai",
+  "version": "0.1.0",
   "module": "index.ts",
   "type": "module",
-  "private": true,
   "bin": {
-    "clawbot-AI": "./index.ts"
+    "clawbot-ai": "./bin/cli.js"
   },
-  "devDependencies": {
-    "@types/bun": "latest"
+
+  "files": [
+    "bin",
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+
+    "scripts": {
+    "dev": "bun run index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "check": "bun run typecheck && bun test",
+    "prepublishOnly": "bun run check && bun run build"
   },
-  "peerDependencies": {
-    "typescript": "^7"
+
+    "repository": {
+    "type": "git",
+    "url": "https://github.com/Ayush-gudigar607/clawbot-ai.git"
   },
+
+    "bugs": {
+    "url": "https://github.com/Ayush-gudigar607/clawbot-ai/issues"
+  },
+
+    "homepage": "https://github.com/Ayush-gudigar607/clawbot-ai",
+
+   "keywords": [
+    "ai",
+    "ai-agent",
+    "coding-agent",
+    "cli",
+    "developer-tools",
+    "typescript",
+    "bun",
+    "llm",
+    "openrouter",
+    "gemini"
+  ],
+
+   "engines": {
+    "node": ">=20"
+  },
+
+ "devDependencies": {
+  "@types/bun": "latest",
+  "typescript": "^5.9.0"
+},
+
+  
   "dependencies": {
     "@ai-sdk/google": "^4.0.76",
     "@clack/core": "^1.4.3",

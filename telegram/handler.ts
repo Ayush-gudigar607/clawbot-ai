@@ -146,7 +146,7 @@ export function registerHandlers(bot: Telegraf) {
 
     approvalSessions.delete(ctx.chat!.id);
     for (const a of s.pending) s.tracker.updateStatus(a.id, 'approved', true);
-    const { errors } = s.executor.applyApprovedFromTracker();
+    const { errors } = await s.executor.applyApprovedFromTracker();
     s.executor.clearStaging();
 
     await ctx.editMessageText('✅ All changes applied.');

@@ -70,7 +70,7 @@ function extraWebTools(tracker: ActionTracker) {
 export async function runAsk(ctx:{reply:(t:string , o?:object)=>Promise<unknown>} , question:string){
 
      const config = readOnlyConfig();
-  const tracker = new ActionTracker();
+    const tracker = new ActionTracker(config.sessionId, config.userId);
   const executor = new ToolExecutor(tracker, config);
   const tools = { ...createReadOnlyTools(executor), ...extraWebTools(tracker) };
   const agent = new ToolLoopAgent({
@@ -86,7 +86,7 @@ export async function runAsk(ctx:{reply:(t:string , o?:object)=>Promise<unknown>
 
 export async function runAgent(ctx: { reply: (t: string, o?: object) => Promise<unknown> }, chatId: number, goal: string) {
   const config = defaultAgentConfig();
-  const tracker = new ActionTracker();
+  const tracker = new ActionTracker(config.sessionId, config.userId);
   const executor = new ToolExecutor(tracker, config);
   const tools = createAgentTools(executor);
   const agent = new ToolLoopAgent({
@@ -105,7 +105,7 @@ export async function runPlanSteps(
   steps: PlanStep[],
 ) {
   const config = defaultAgentConfig();
-  const tracker = new ActionTracker();
+  const tracker = new ActionTracker(config.sessionId, config.userId);
   const executor = new ToolExecutor(tracker, config);
   const tools = { ...createAgentTools(executor), ...extraWebTools(tracker) };
 
