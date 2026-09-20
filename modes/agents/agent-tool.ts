@@ -100,8 +100,16 @@ export function createAgentTools(executor: ToolExecutor) {
           execute: async ({ query }) => executor.searchSkills(query),
         }),
 
+        list_skill_resources: tool({
+          description: "List a selected skill's supporting resources, references, scripts, and assets. Read relevant text resources with read_skill; do not execute scripts or use assets unless the task calls for them.",
+          inputSchema: z.object({
+            path: z.string().describe("Path to the selected SKILL.md"),
+          }),
+          execute: async ({ path: p }) => executor.listSkillResources(p),
+        }),
+
         read_skill:tool({
-          description:"Read the content of a skill file",
+          description:"Read the content of a SKILL.md or a supporting text resource under a skill root",
           inputSchema:z.object({
             path:z.string().describe("The relative path to the skill file to read")
           }),

@@ -547,6 +547,43 @@ export class ToolExecutor {
     return out || "(no matches)";
   }
 
+  listSkillResources(skillPath: string): string {
+    const skillFile = path.isAbsolute(skillPath)
+      ? path.normalize(skillPath)
+      : path.normalize(path.resolve(this.config.codebasePath, skillPath));
+    const allowed = this.skillRoots().some((root) => {
+      const resolvedRoot = path.resolve(root);
+      return skillFile === resolvedRoot || skillFile.startsWith(resolvedRoot + path.sep);
+    });
+    if (!allowed || path.basename(skillFile) !== "SKILL.md") {
+      throw new Error("list_skill_resources: path must be a SKILL.md under a skill root");
+    }
+
+    const skillDir = path.dirname(skillFile);
+    const resourceDirs = ["resources", "references", "scripts", "assets"];
+    const resources: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else resources.push(full);
+      }
+    };
+    for (const name of resourceDirs) {
+      const dir = path.join(skillDir, name);
+      if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) walk(dir);
+    }
+
+    const out = resources.sort().join("\n");
+    this.tracker.log({
+      type: "code_analysis",
+      path: skillFile,
+      details: { after: out || "(no resources)", toolName: "list_skill_resources" },
+      status: "executed",
+    });
+    return out || "(no resources)";
+  }
+
  readSkill(skillPath: string): string {
     const abs = path.isAbsolute(skillPath)
       ? path.normalize(skillPath)
