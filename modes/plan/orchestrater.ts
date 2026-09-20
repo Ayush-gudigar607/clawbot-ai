@@ -13,6 +13,7 @@ import { printPlan,selectSteps } from "./selection.ts";
 import type { Plan, PlanStep } from "./types.ts";
 import { createWebTools } from "./web-tools.ts";
 import { WithMemoryContext } from "../../memory/test-memory.ts";
+import { randomUUID } from "node:crypto";
 
 
 function stepPrompt(goal: string, step: PlanStep): string {
@@ -42,8 +43,17 @@ export async function runPlanMode():Promise<void>
     initialValue:true,
   })
 
-  const config=defaultAgentConfig()
-  const tracker=new ActionTracker()
+  if(isCancel(proceed) || !proceed) return;
+
+  const sessionId=randomUUID();
+  const userId=process.env.CLAWBOT_USER_ID ?? "local-user";
+
+  const config=defaultAgentConfig({
+    sessionId,
+    userId
+  })
+
+  const tracker=new ActionTracker(sessionId,userId);
   const executor=new ToolExecutor(tracker,config);
 
   const tools={
@@ -73,7 +83,7 @@ export async function runPlanMode():Promise<void>
   const ok=await runApprovalFlow(tracker);
   if(!ok) return executor.clearStaging();
 
-  const {errors}=executor.applyApprovedFromTracker();
+  const {errors}=await executor.applyApprovedFromTracker();
    if (errors.length) {
     console.log(chalk.red('\nSome operations reported errors:\n'));
     for (const e of errors) console.log(chalk.red(`  • ${e}`));

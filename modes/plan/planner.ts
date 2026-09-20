@@ -129,7 +129,7 @@ const PLAN_INSTRUCTIONS=(codebase:boolean,hasWeb:boolean)=>
 export async function generatePlan(goal:string)
 {
   const config=defaultAgentConfig();
-  const tracker=new ActionTracker();
+  const tracker=new ActionTracker(config.sessionId, config.userId);
   const executor=new ToolExecutor(tracker,config);
 
 
@@ -161,13 +161,15 @@ const result = await generateText({
 
   const validated=planSchema.parse(result.output);
 
-    const steps:PlanStep[] = validated.steps.map((s , i)=>({
+    const steps:PlanStep[] = validated.steps.map(
+      (s: z.infer<typeof planSchema>["steps"][number], i: number) => ({
     id:`step-${i+1}`,
     title:s.title,
     description:s.description,
     hints:s.hints,
     complexity:s.complexity
-  }));
+      }),
+    );
 
   return {
     goal,
