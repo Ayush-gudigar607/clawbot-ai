@@ -10,6 +10,7 @@ import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
 import { runApprovalFlow } from "../agents/approval";
 import { createWebTools } from "../plan/web-tools";
 import { WithMemoryContext } from "../../memory/test-memory";
+import { randomUUID } from "node:crypto";
 
 function createAskTools(executor: ToolExecutor) {
   return {
@@ -111,14 +112,20 @@ export async function runAskMode()
 
     if(isCancel(question) || !question.trim()) return
 
-    const config=defaultAgentConfig()
+    const sessionId = randomUUID();
+    const userId = process.env.CLAWBOT_USER_ID ?? "local-user";
+
+    const config=defaultAgentConfig({
+sessionId,
+userId
+    })
 
     config.tools.allowFileCreation=true
     config.tools.allowShellExecution=false
     config.tools.allowFileModification=false
     config.tools.allowFolderCreation=false
 
-    const tracker=new ActionTracker()
+    const tracker=new ActionTracker(sessionId,userId)
     const executor=new ToolExecutor(tracker,config)
     
     //TODO:web-search tool(firecrawl)
@@ -170,6 +177,6 @@ export async function runAskMode()
   const ok=await runApprovalFlow(tracker)
   if(!ok) return executor.clearStaging();
 
-  executor.applyApprovedFromTracker()
+  await executor.applyApprovedFromTracker()
   executor.clearStaging()
 }
