@@ -10,6 +10,7 @@ export interface DurableMemory {
   confidence?: number;
 }
 
+//this is for agent memory, which is a more advanced memory system that can be used to store and retrieve memories for agents. It is designed to be used with the Supermemory API.
 export interface AgentMemory {
   rememberMany(candidates: readonly DurableMemory[]): Promise<void>;
 
