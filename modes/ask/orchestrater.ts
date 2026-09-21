@@ -6,7 +6,7 @@ import { getAgentModel } from "../../ai";
 import { ActionTracker } from "../agents/action-tracker";
 import { ToolExecutor } from "../agents/tool-executor";
 import { defaultAgentConfig } from "../agents/types";
-import { renderTerminalMarkdown } from "../../terminalui/terminal-md";
+import { renderTerminalMarkdown, logToolCall } from "../../terminalui/terminal-md";
 import { runApprovalFlow } from "../agents/approval";
 import { createWebTools } from "../plan/web-tools";
 import {
@@ -22,7 +22,7 @@ function createAskTools(executor: ToolExecutor) {
   return {
     read_file: tool({
       description:
-        "Stage creation of a file by reading its content from the codebase",
+        "Read the content of an existing file in the workspace by its relative path.",
       inputSchema: z.object({
         path: z.string().describe("Relative path of the file to read"),
       }),
@@ -143,7 +143,18 @@ userId
     const agent=new ToolLoopAgent({
     model: getAgentModel() as unknown as LanguageModel,
         stopWhen:stepCountIs(20),
-        instructions: `For a task covered by a skill, call search_skills, read the selected SKILL.md, and call list_skill_resources. Read only resources explicitly referenced by the skill or needed to answer the request. ${DURABLE_MEMORY_INSTRUCTIONS}`,
+        instructions: [
+          `You are Clawbot AI in Ask Mode—an expert software architect and codebase researcher.`,
+          `Workspace Root: ${config.codebasePath}`,
+          ``,
+          `### Guidelines:`,
+          `1. Codebase Grounding: Always base answers on the actual codebase. Use search_files, read_file, list_files, and analyze_codebase to locate exact file paths, implementations, and configurations before answering.`,
+          `2. Read-Only Context: You are in an advisory mode. Focus on clear explanations, architectural insights, and actionable guidance.`,
+          `3. Web Tools: If the question requires external library knowledge, latest documentation, or external APIs, use web_search, web_crawl, or fetch_url.`,
+          `4. Skills Reference: Check relevant skills using search_skills and read SKILL.md when appropriate.`,
+          `5. Structure & Clarity: Format answers using clean markdown with code snippets, relative file paths, and diagrams (in mermaid markdown) when helpful.`,
+          `6. Durable Memory: ${DURABLE_MEMORY_INSTRUCTIONS}`,
+        ].join("\n"),
         tools
     })
 
@@ -155,13 +166,17 @@ userId
     };
     const memoryContext=await withMemoryContext(question.trim(), memoryIdentity);
     
-    const result=await agent.generate({
-        prompt:[memoryContext, question.trim()].filter(Boolean).join("\n\n")
+    const result = await agent.generate({
+      prompt: [memoryContext, question.trim()].filter(Boolean).join("\n\n"),
+      onStepFinish: ({ toolCalls }) => {
+        for (const tc of toolCalls) {
+          logToolCall(String(tc.toolName), tc.input);
+        }
+      },
+    });
 
-    })
-
-    const answer=result.text?.trim() || "(no answer)"
-    logger.info("\n"+renderTerminalMarkdown(answer)+"\n")
+    const answer = result.text?.trim() || "(no answer)";
+    console.log("\n" + renderTerminalMarkdown(answer) + "\n");
     await saveDurableMemories(result.text ?? "", memoryIdentity);
 
     const wantSave=await confirm({

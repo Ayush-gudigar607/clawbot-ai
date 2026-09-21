@@ -26,7 +26,7 @@ function readOnlyConfig(): AgentConfig {
   return c;
 }
 
-function agentOptions(config: AgentConfig, limits: ExecutionLimits) {
+function agentOptions(config: AgentConfig, limits: ExecutionLimits, instructions?: string) {
     return {
         model:getAgentModel(),  
         stopWhen: [
@@ -34,7 +34,12 @@ function agentOptions(config: AgentConfig, limits: ExecutionLimits) {
           ({ steps }: { steps: Array<{ toolCalls?: unknown[] }> }) =>
             limits.shouldStop(steps.reduce((total, step) => total + (step.toolCalls?.length ?? 0), 0)),
         ],
-        instructions:`Workspace root:${config.codebasePath}\n${DURABLE_MEMORY_INSTRUCTIONS}`
+        instructions: instructions ?? [
+          `You are Clawbot AI, an expert autonomous software engineer working in this repository.`,
+          `Workspace Root: ${config.codebasePath}`,
+          `Inspect the codebase before making changes. Stage all file modifications accurately for user review.`,
+          DURABLE_MEMORY_INSTRUCTIONS,
+        ].join("\n"),
     }
 }
 
@@ -109,8 +114,19 @@ export async function runAsk(ctx:{reply:(t:string , o?:object)=>Promise<unknown>
     const tracker = new ActionTracker(config.sessionId, config.userId);
   const executor = new ToolExecutor(tracker, config);
   const tools = { ...createReadOnlyTools(executor), ...extraWebTools(tracker) };
+  const askInstructions = [
+    `You are Clawbot AI in Telegram Ask Mode—an expert software architect and codebase advisor.`,
+    `Workspace Root: ${config.codebasePath}`,
+    ``,
+    `Guidelines:`,
+    `1. Use search_files, read_file, and list_files to investigate the codebase thoroughly before answering.`,
+    `2. Keep Telegram responses concise, clear, and formatted in clean Markdown.`,
+    `3. You have read-only access in this mode.`,
+    DURABLE_MEMORY_INSTRUCTIONS,
+  ].join("\n");
+
   const agent = new ToolLoopAgent({
-    ...agentOptions(config, limits),
+    ...agentOptions(config, limits, askInstructions),
     tools,
   });
 
@@ -133,8 +149,21 @@ export async function runAgent(ctx: { reply: (t: string, o?: object) => Promise<
   const tracker = new ActionTracker(config.sessionId, config.userId);
   const executor = new ToolExecutor(tracker, config);
   const tools = createAgentTools(executor);
+
+  const agentInstructions = [
+    `You are Clawbot AI, an expert autonomous software engineer operating via Telegram.`,
+    `Workspace Root: ${config.codebasePath}`,
+    ``,
+    `Guidelines:`,
+    `1. Explore existing files first using read_file or search_files before making changes.`,
+    `2. Stage all file modifications cleanly. The user will review and approve them before they are applied.`,
+    `3. Make surgical, minimal edits respecting existing project style and types.`,
+    `4. Keep Telegram responses clear and concise.`,
+    DURABLE_MEMORY_INSTRUCTIONS,
+  ].join("\n");
+
   const agent = new ToolLoopAgent({
-    ...agentOptions(config, limits),
+    ...agentOptions(config, limits, agentInstructions),
     tools,
   });
   const memoryIdentity = {
@@ -165,8 +194,14 @@ export async function runPlanSteps(
   for (const step of steps) {
     await ctx.reply(`🔧 Executing: *${step.title}*`, { parse_mode: 'Markdown' });
     const prompt = [`Goal: ${plan.goal}`, `Step: ${step.title}`, step.description].join('\n');
+    const stepInstructions = [
+      `You are Clawbot AI executing plan step: "${step.title}" towards the goal: "${plan.goal}".`,
+      `Workspace Root: ${config.codebasePath}`,
+      `Focus strictly on this step. Stage file changes cleanly for user review.`,
+      DURABLE_MEMORY_INSTRUCTIONS,
+    ].join("\n");
     const agent = new ToolLoopAgent({
-      ...agentOptions(config, limits),
+      ...agentOptions(config, limits, stepInstructions),
       tools,
     });
     const memoryIdentity = {
