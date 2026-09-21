@@ -1,4 +1,4 @@
-import supermemory from "supermemory";
+import Supermemory from "supermemory";
 import { createHash } from "node:crypto";
 import type { DurableMemory, MemoryContext } from "./types";
 import { env } from "../src/config/env";
@@ -38,14 +38,14 @@ export function createMemoryContext(input: MemoryContext): MemoryContext {
 }
 
 export class MemoryManager{
-    private readonly client: supermemory;
+    private readonly client: Supermemory;
 
     constructor(apiKey=env.SUPERMEMORY_API_KEY || "") {
       if (!apiKey) {
         throw new Error("SUPERMEMORY_API_KEY is not set in the environment variables.");
       }
 
-      this.client = new supermemory({ apiKey });
+      this.client = new Supermemory({ apiKey });
     }
 
 // Creates a stable memory namespace.
