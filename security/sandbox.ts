@@ -1,12 +1,14 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 
+//provide sandbox options 
 export interface SandboxOptions {
   cwd: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
 }
 
+//provides sandbox results
 export interface SandboxResult {
   exitCode: number;
   stdout: string;
