@@ -23,6 +23,7 @@ function isSafeMemory(content: string): boolean {
   );
 }
 
+//function to create the memorycontext for the particular input
 export function createMemoryContext(input: MemoryContext): MemoryContext {
   for (const [key, value] of Object.entries(input)) {
     if (!value || typeof value !== "string" || !value.trim()) {
