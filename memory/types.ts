@@ -1,9 +1,11 @@
+//Provide the interface for MemoryContext
 export interface MemoryContext {
   userId: string;
   projectId: string;
   conversationId: string;
 }
 
+//provide the interface for DurableaMemory
 export interface DurableMemory {
   content: string;
   reason?: string;
